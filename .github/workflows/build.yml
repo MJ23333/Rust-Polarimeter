@@ -16,32 +16,38 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4 # 检出你的代码
 
+    
+
+
+    # - name: Install OpenCV and LLVM
+    #   run: choco install opencv -y; choco install llvm -y
+
+    # - name: Set OpenCV Environment Variables from Choco
+    #   run: |
+    #       # 1. Find the necessary paths based on the OpenCV_DIR set by choco
+    #       $opencv_include_path = Join-Path $env:OpenCV_DIR "build\include"
+    #       # NOTE: The 'vc17' part might change with future Visual Studio versions on the runner
+    #       $opencv_lib_path = Join-Path $env:OpenCV_DIR "build\x64\vc17\lib"
+          
+    #       # 2. Set the environment variables for subsequent steps
+    #       echo "OPENCV_INCLUDE_PATHS=$opencv_include_path" >> $env:GITHUB_ENV
+    #       echo "OPENCV_LINK_PATHS=$opencv_lib_path" >> $env:GITHUB_ENV
+    #       # For a standard build, 'opencv_world' followed by the version number is typical
+    #       echo "OPENCV_LINK_LIBS=opencv_world490" >> $env:GITHUB_ENV
+          
+    #       # 3. (Optional) Verify the paths
+    #       Write-Host "Set OPENCV_INCLUDE_PATHS to: $opencv_include_path"
+    #       Write-Host "Set OPENCV_LINK_PATHS to: $opencv_lib_path"
+    #   shell: pwsh
+    - uses: Dovyski/setup-opencv-action@v1.1
+      with:
+      opencv-version: '4.9.0'
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: ${{ matrix.rust }}
 
-
-    - name: Install OpenCV and LLVM
-      run: choco install opencv --version=4.9.0 -y; choco install llvm -y
-
-    - name: Set OpenCV Environment Variables from Choco
-      run: |
-          # 1. Find the necessary paths based on the OpenCV_DIR set by choco
-          $opencv_include_path = Join-Path $env:OpenCV_DIR "build\include"
-          # NOTE: The 'vc17' part might change with future Visual Studio versions on the runner
-          $opencv_lib_path = Join-Path $env:OpenCV_DIR "build\x64\vc17\lib"
-          
-          # 2. Set the environment variables for subsequent steps
-          echo "OPENCV_INCLUDE_PATHS=$opencv_include_path" >> $env:GITHUB_ENV
-          echo "OPENCV_LINK_PATHS=$opencv_lib_path" >> $env:GITHUB_ENV
-          # For a standard build, 'opencv_world' followed by the version number is typical
-          echo "OPENCV_LINK_LIBS=opencv_world490" >> $env:GITHUB_ENV
-          
-          # 3. (Optional) Verify the paths
-          Write-Host "Set OPENCV_INCLUDE_PATHS to: $opencv_include_path"
-          Write-Host "Set OPENCV_LINK_PATHS to: $opencv_lib_path"
-      shell: pwsh
     # 新增步骤: 安装 cargo-bundle
     - name: Install cargo-bundle
       run: cargo install cargo-bundle
