@@ -20,11 +20,13 @@ jobs:
 
 
     - name: Install OpenCV and LLVM
-      run: choco install opencv -y; choco install llvm -y
+      run: choco install opencv --version=4.11.0 -y; choco install llvm -y
 
     - name: Discover and Set OpenCV Environment Variables
       id: set_opencv_vars
       run: |
+          refreshenv
+          
           # Chocolatey sets the OpenCV_DIR variable, which is our starting point.
           if (-not $env:OpenCV_DIR) {
             Write-Error "OpenCV_DIR environment variable not set by Chocolatey. Cannot proceed."
@@ -55,8 +57,14 @@ jobs:
           }
           echo "OPENCV_LINK_LIBS=$LibNames" >> $env:GITHUB_ENV
           Write-Output "OPENCV_LINK_LIBS=$LibNames"
+         
       shell: pwsh
-    
+     # echo "OPENCV_INCLUDE_PATHS=C:\tools\opencv\build\include" >> $env:GITHUB_ENV
+
+          # # Discover the lib path (robustly finds the vc* folder)
+          # echo "OPENCV_LINK_PATHS=C:\tools\opencv\build\x64\vc17\lib" >> $env:GITHUB_ENV
+          
+          # echo "OPENCV_LINK_LIBS=opencv_world4110" >> $env:GITHUB_ENV
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
