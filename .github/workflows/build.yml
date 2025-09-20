@@ -41,7 +41,7 @@ jobs:
     #   shell: pwsh
     - uses: Dovyski/setup-opencv-action@v1.1
       with:
-      opencv-version: '4.9.0'
+        opencv-version: '4.9.0'
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
