@@ -19,8 +19,8 @@ jobs:
     
 
 
-    # - name: Install OpenCV and LLVM
-    #   run: choco install opencv --version=4.11.0 -y; choco install llvm -y
+    - name: Install OpenCV and LLVM
+      run: choco install opencv --version=4.11.0 -y; choco install llvm -y
 
     - name: Discover and Set OpenCV Environment Variables
       id: set_opencv_vars
