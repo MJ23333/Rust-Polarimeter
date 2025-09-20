@@ -42,7 +42,7 @@ jobs:
           Write-Output "OPENCV_LINK_PATHS=$LibPath"
           
           # Discover all library names in that path
-          $ReleaseLibNames = (Get-ChildItem $LibPath -Filter "*[!d].lib").Name -replace '\.lib$' -join ','
+          $ReleaseLibNames = (Get-ChildItem $LibPath -Filter "*.lib" | Where-Object { $_.Name -notlike "*d.lib" }).Name -replace '\.lib$' -join ','
           if (-not $ReleaseLibNames) {
             Write-Error "Could not find any RELEASE .lib files (not ending with d.lib) in $LibPath"
             exit 1
@@ -74,15 +74,14 @@ jobs:
     #   with:
     #     name: windows-executable
     #     path: target/release/rust_polarimeter_gui.exe
-        #     Write-Output "Copying executable..."
-        # Copy-Item -Path "target/release/rust_polarimeter_gui.exe" -Destination $PKG_DIR
     - name: Create Distribution Package
       id: create_package
       run: |
         $PKG_DIR = "release_package"
         New-Item -ItemType Directory -Force -Path $PKG_DIR
 
-
+        Write-Output "Copying executable..."
+        Copy-Item -Path "target/release/rust_polarimeter_gui.exe" -Destination $PKG_DIR
 
         # ======================================================================
         # vvvvvvvvvvvvvv     模糊查找 DLL 的核心改进     vvvvvvvvvvvvvvvv
