@@ -5,6 +5,11 @@ on:
     branches: [ "main" ] # 当主分支有更新时触发
   workflow_dispatch: # 允许手动触发
 
+env:
+  # 设置 vcpkg 的根目录，以便在多个步骤中使用
+  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+  # 告诉 rust-vcpkg crate 我们要使用动态链接
+  VCPKGRS_DYNAMIC: '1'
 jobs:
   build-windows:
     runs-on: windows-latest # 使用最新的 Windows 环境
@@ -16,26 +21,53 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4 # 检出你的代码
 
+    - name: Setup MSVC developer environment
+      uses: ilammy/msvc-dev-cmd@v1
+
+      # 3. 缓存 vcpkg 以加速构建
+    - name: Cache vcpkg
+      uses: actions/cache@v4
+      with:
+          path: ${{ env.VCPKG_ROOT }}
+          # 当 vcpkg.json 文件变化时，缓存会失效
+          key: ${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-
+    
+    - name: Setup and install vcpkg dependencies
+      run: |
+          # 如果缓存中没有 vcpkg，则克隆它
+          if (-not (Test-Path ${{ env.VCPKG_ROOT }})) {
+            git clone https://github.com/microsoft/vcpkg.git ${{ env.VCPKG_ROOT }}
+          }
+          # 运行 vcpkg 的启动脚本
+          cd ${{ env.VCPKG_ROOT }}
+          ./bootstrap-vcpkg.bat
+          # 安装我们需要的库
+          # 注意：这里我们使用 opencv4[contrib] 来获取更完整的功能
+          ./vcpkg.exe install opencv4[contrib] llvm --triplet x64-windows
+      shell: pwsh
+  
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: ${{ matrix.rust }}
 
-    - name: Install Chocolatey (Windows package manager)
-      run: |
-        Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+    # 新增步骤: 安装 cargo-bundle
+    - name: Install cargo-bundle
+      run: cargo install cargo-bundle
 
-    - name: Install OpenCV via Chocolatey
-      # 这会自动下载预编译好的 OpenCV 库并设置好环境变量
-      run: choco install opencv --version=4.5.5 -y
+    # 修改步骤: 使用 cargo bundle 而不是 cargo build
+    - name: Bundle the release executable
+      run: cargo bundle --release
 
-    - name: Build the release executable
-      # Cargo 会在 Windows 环境下找到 OpenCV 并编译
-      run: cargo build --release
-
-    - name: Upload Artifact
-      # 将编译好的 exe 文件打包上传，以便你下载
+    # 修改步骤: 上传打包好的产物
+    - name: Upload Artifact (zip)
       uses: actions/upload-artifact@v4
       with:
-        name: windows-executable
-        path: target/release/rust_polarimeter_gui.exe # <-- 把 "你的程序名" 替换成你的程序名
+        name: windows-bundle-zip
+        # cargo bundle 会把所有东西放在 target/release/bundle/os-arch/你的程序名/ 目录下
+        # 我们把它压缩并上传
+        path: |
+          target/release/bundle/windows-msvc/ # 这个路径可能会变化
+          !target/release/bundle/**/*.pdb # 排除调试文件
