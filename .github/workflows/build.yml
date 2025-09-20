@@ -21,34 +21,18 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4 # 检出你的代码
 
-    - name: Setup MSVC developer environment
-      uses: ilammy/msvc-dev-cmd@v1
     - name: Set Environment Variables
       run: |
-          echo "VCPKG_ROOT=${{ github.workspace }}/vcpkg" >> $env:GITHUB_ENV
           echo "VCPKGRS_DYNAMIC=1" >> $env:GITHUB_ENV
       shell: pwsh
       # 3. 缓存 vcpkg 以加速构建
-    - name: Cache vcpkg
-      uses: actions/cache@v4
+    - name: vcpkg build
+      uses: johnwason/vcpkg-action@v7
+      id: vcpkg
       with:
-          path: '${{ env.VCPKG_ROOT }}'
-          # 当 vcpkg.json 文件变化时，缓存会失效
-          key: ${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}
-          restore-keys: |
-            ${{ runner.os }}-vcpkg-
-    
-    - name: Setup and install vcpkg dependencies
-      run: |
-          # 如果缓存中没有 vcpkg，则克隆它
-          if (-not (Test-Path '${{ env.VCPKG_ROOT }}')) {
-            git clone https://github.com/microsoft/vcpkg.git '${{ env.VCPKG_ROOT }}'
-          }
-          # 运行 vcpkg 的启动脚本
-          cd '${{ env.VCPKG_ROOT }}'
-          & '${{ env.VCPKG_ROOT }}/bootstrap-vcpkg.bat'
-          & '${{ env.VCPKG_ROOT }}/vcpkg.exe' install opencv4[contrib] llvm --triplet x64-windows
-      shell: pwsh
+        pkgs: opencv4 llvm
+        triplet: x64-windows-release
+        token: ${{ github.token }}
   
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
