@@ -27,7 +27,6 @@ linfa-preprocessing = "0.7.0"
 rust_xlsxwriter = "0.90.0"
 linfa-linear = "0.7" 
 ndarray = { version = "0.15.6", features = ["serde"] }
-bincode = "1.3.3"
 serde = { version = "1.0", features = ["derive"] }
 calamine = "0.30.1" 
 anyhow="1.0.99"
@@ -42,3 +41,6 @@ opt-level = 3
 name = "Polarimeter"
 identifier = "com.ccme.polarimeter"
 icon = ["icons/ccme.ico"]
+
+[build-dependencies]
+winres = "0.1"

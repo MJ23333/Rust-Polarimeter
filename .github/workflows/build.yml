@@ -63,12 +63,10 @@ jobs:
         toolchain: ${{ matrix.rust }}
 
     # 新增步骤: 安装 cargo-bundle
-    - name: Install cargo-bundle
-      run: cargo install cargo-bundle
 
     # 修改步骤: 使用 cargo bundle 而不是 cargo build
     - name: Bundle the release executable
-      run: cargo bundle --release
+      run: cargo build --release
 
     # 修改步骤: 上传打包好的产物
     - name: Upload Artifact (zip)
@@ -78,5 +76,4 @@ jobs:
         # cargo bundle 会把所有东西放在 target/release/bundle/os-arch/你的程序名/ 目录下
         # 我们把它压缩并上传
         path: |
-          target/release/bundle/windows-msvc/ # 这个路径可能会变化
-          !target/release/bundle/**/*.pdb # 排除调试文件
+          target/release/ # 这个路径可能会变化
