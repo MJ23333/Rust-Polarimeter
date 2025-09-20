@@ -49,7 +49,7 @@ pub fn get_available_ports(token: CancellationToken) -> Vec<String> {
     }
 
     // 4. 合并列表，响应成功的排在前面
-    info!("[后端] 探测完成。响应的设备: {:?}, 其他设备: {:?}", responsive_ports, other_ports);
+    info!("串口列表刷新完成");
     responsive_ports.extend(other_ports);
     responsive_ports
 }
@@ -60,7 +60,7 @@ pub fn connect(
     baud_rate: u32,
     tx: &Sender<Update>,
 ) -> Result<()> {
-    info!("[后端] 尝试连接到串口 {} @ {} 波特率", port_name, baud_rate);
+    info!("尝试连接到串口 {} @ {} 波特率", port_name, baud_rate);
 
     // 先断开任何现有连接
     let mut s = state.lock();
@@ -71,7 +71,7 @@ pub fn connect(
         .open()
         .map(|port| Some(Arc::new(Mutex::new(port))))
         .unwrap_or_else(|e| {
-            eprintln!("Failed to open serial port '{}': {}", port_name, e);
+            error!("打开失败：{}", e);
             None
         });
     if s.devices.serial_port.is_none() {
@@ -87,7 +87,7 @@ pub fn disconnect(state: &Arc<Mutex<BackendState>>) -> Result<()> {
     let mut s = state.lock();
     if s.devices.serial_port.is_some() {
         s.devices.serial_port = None; // Drop 会自动关闭端口
-        info!("[后端] 串口已断开");
+        // info!("串口已断开");
     }
     Ok(())
 }

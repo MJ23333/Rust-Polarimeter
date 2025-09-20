@@ -42,34 +42,27 @@ pub fn handle_device(
         DeviceCommand::DisconnectSerial => {
             super::serial::disconnect(&state)?;
             tx.send(Update::Device(DeviceUpdate::SerialConnectionStatus(false)))?;
-            send_status(&tx, "串口已断开")?;
+            info!("串口已断开");
         }
         DeviceCommand::TestSerial => {
             super::serial::test(&state, &tx)?;
         }
         DeviceCommand::RotateMotor { steps } => {
-            send_status(&tx, format!("正在旋转 {}...", steps))?;
             // let reverse={state.lock().rotation_direction_need_reverse};
             super::measurement::precision_rotate(&state, tx, steps)?;
-
-            send_status(&tx, "旋转完成")?;
         }
         DeviceCommand::RotateTo { steps } => {
-            send_status(&tx, format!("正在旋转到 {}...", steps))?;
             // super::serial::rotate_motor(&state, angle)?;
             // let reverse={state.lock().rotation_direction_need_reverse};
             super::measurement::precision_rotate_to(&state, tx, steps)?;
-            send_status(&tx, "旋转完成")?;
         }
         DeviceCommand::SetRotationDirection(is_ama) => {
             state.lock().rotation_direction_is_ama = is_ama;
             let dir = if is_ama { "AMA" } else { "MAM" };
-            info!("旋转方向已设置为: {}", dir);
-            send_status(&tx, format!("旋转方向设置为: {}", dir))?;
+            info!("旋光仪模式已设置为 {}", dir);
         }
         DeviceCommand::SetRotationReverse(is_ama) => {
             state.lock().rotation_direction_need_reverse = is_ama;
-            send_status(&tx, format!("旋转翻转设置为: {}", is_ama))?;
         }
         DeviceCommand::StartRecording {
             mode,
@@ -102,7 +95,8 @@ pub fn handle_device(
         DeviceCommand::StopRecording => {
             // let mut state_guard = state.lock();
             // send_status(&tx, "正在停止录制...")?;
-            info!("{:?}", &state.lock().recording.cancellation_token);
+            info!("正在停止录制");
+            // info!("{:?}", &state.lock().recording.cancellation_token);
             if let Some(token) = &state.lock().recording.cancellation_token {
                 // 设置标志，通知录制线程退出循环
                 token.store(true, Ordering::Relaxed);
@@ -115,7 +109,7 @@ pub fn handle_device(
                 //     }
                 // }
             } else {
-                send_status(&tx, "当前没有正在进行的录制任务")?;
+                info!("没有录制任务，何谈停止？");
             }
         }
         DeviceCommand::FindZeroPoint => {
@@ -148,16 +142,15 @@ pub fn handle_camera(
 ) -> Result<()> {
     match cmd {
         CameraCommand::Connect { index } => {
-            send_status(&tx, format!("正在连接相机 {}...", index))?;
+            info!("正在连接相机 {}...", index);
             super::camera::connect_camera(&state, index, tx)?;
         }
         CameraCommand::Disconnect => {
-            send_status(&tx, "正在断开相机连接...")?;
+            info!("正在断开相机...");
             super::camera::disconnect_camera(&state)?;
             tx.send(Update::Device(DeviceUpdate::CameraConnectionStatus(false)))?;
         }
         CameraCommand::RefreshCameras => {
-            send_status(&tx, "正在搜索")?;
             super::camera::refresh_cameras(tx)?;
             // tx.send(Update::Device(DeviceUpdate::CameraConnectionStatus(false)))?;
         }
@@ -174,7 +167,7 @@ pub fn handle_camera(
             let state_guard = state.lock();
             let mut settings = state_guard.devices.camera_settings.lock();
             settings.lock_circle = value;
-            info!("圆形锁定状态已更新为: {}", value);
+            info!("圆锁定状态已更新为: {}", value);
         } //_ => info!("收到未实现的 CameraCommand"),
     }
     Ok(())
@@ -201,17 +194,16 @@ pub fn handle_training(
         }
         TrainingCommand::ResetModel => {
             super::model::reset_model(&state, &tx)?;
-            send_status(&tx, "模型和数据已重置")?;
         }
         TrainingCommand::ResetPersistentDataset => {
             state.lock().training.persistent_ama.clear();
             state.lock().training.persistent_mam.clear();
-            send_status(&tx, "常驻数据集已重置")?;
+            info!("常驻数据集已重置");
         }
         TrainingCommand::ResetRecordedDataset => {
             state.lock().training.mam_images.clear();
             state.lock().training.ama_images.clear();
-            send_status(&tx, "录制数据集已重置")?;
+            info!("录制数据集已重置");
         }
         // TrainingCommand::LoadModel { path } => {
         //     if let Some(model)=state.lock().training.fitted_model{
@@ -245,18 +237,18 @@ pub fn handle_static_measure(
             tx.send(Update::Measurement(MeasurementUpdate::StaticResults(
                 vec![],
             )))?;
-            send_status(&tx, "静态测量结果已清除")?;
+            info!("静态测量结果已清除")
         }
         StaticMeasureCommand::SaveResults { path } => {
             super::measurement::save_static(&state, path, &tx)?;
-            send_status(&tx, "静态测量结果已清除")?;
+            info!("静态测量结果已储存")
         }
         StaticMeasureCommand::Stop => {
             if let Some(stoptoken) = &state.lock().measurement.static_task_token {
                 stoptoken.store(true, Ordering::Relaxed);
                 info!("已发送停止信号");
             } else {
-                send_status(&tx, "没有正在运行的静态实验")?;
+                info!("没有正在运行的静态实验");
             }
         } //_ => info!("收到未实现的 StaticMeasureCommand"),
     }
@@ -280,12 +272,11 @@ pub fn handle_dynamic_measure(
             state.lock().measurement.dynamic_params=params;
         }
         DynamicMeasureCommand::Stop => {
-            send_status(&tx, "正在停止动态实验...")?;
             if let Some(token) = &state.lock().measurement.dynamic_task_token {
                 token.store(true, Ordering::Relaxed);
                 info!("已发送停止信号");
             } else {
-                send_status(&tx, "没有正在运行的动态实验")?;
+                info!("没有正在运行的动态实验");
             }
         }
         DynamicMeasureCommand::StartNew => {
@@ -299,14 +290,9 @@ pub fn handle_dynamic_measure(
                 tx.send(Update::Measurement(MeasurementUpdate::StartTime(
                     s.measurement.dynamic_time.clone(),
                 )))?;
-                info!("重新计时开始");
-                tx.send(Update::Measurement(MeasurementUpdate::DynamicStatus(
-                    format!("重新计时开始"),
-                )))?;
+                info!("开始新动态试验");
             } else {
-                tx.send(Update::General(GeneralUpdate::Error(format!(
-                    "请先关闭动态追踪"
-                ))))?;
+                info!("请先关闭动态追踪");
             }
         }
         DynamicMeasureCommand::ClearResults => {
@@ -315,10 +301,7 @@ pub fn handle_dynamic_measure(
             tx.send(Update::Measurement(MeasurementUpdate::DynamicResults(
                 s.measurement.dynamic_results.clone(),
             )))?;
-            info!("清除动态测量结果");
-            tx.send(Update::Measurement(MeasurementUpdate::DynamicStatus(
-                format!("结果已经清除"),
-            )))?;
+            info!("动态测量结果已清除");
         }
     }
     Ok(())
@@ -334,7 +317,7 @@ pub fn handle_data_processing(
 
     match cmd {
         DataProcessingCommand::LoadData { path } => {
-            send_status(&tx, "正在加载数据...")?;
+            info!("正在加载数据");
             let mut workbook: calamine::Xlsx<_> = calamine::open_workbook(path)?;
 
             if let Some(Ok(range)) = workbook.worksheet_range_at(0) {
@@ -344,7 +327,7 @@ pub fn handle_data_processing(
                     let time_opt = row.get(1).and_then(|c| c.get_float());
                     let steps_opt = row.get(2).and_then(|c| c.get_float());
                     let angle_opt = row.get(3).and_then(|c| c.get_float());
-                    info!("{:?} {:?} {:?}",time_opt,steps_opt,angle_opt);
+                    // info!("{:?} {:?} {:?}",time_opt,steps_opt,angle_opt);
                     if let (Some(time), Some(steps), Some(angle)) = (time_opt, steps_opt, angle_opt)
                     {
                         data.push((time, steps.round() as i32, angle, false));
@@ -352,7 +335,7 @@ pub fn handle_data_processing(
                 }
                 // Update the state
                 state_guard.data_processing.raw_data = Some(data);
-                send_status(&tx, "数据加载成功, 正在计算...")?;
+                info!("数据加载成功");
             }
         }
         DataProcessingCommand::SetAlphaInf { alpha } => {

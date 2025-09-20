@@ -191,7 +191,7 @@ pub fn load_recorded_dataset(
     path: &Path,
     tx: &Sender<Update>,
 ) -> Result<()> {
-    info!("[后端] 开始加载录制数据集: {:?}", path);
+    info!("开始加载录制数据集: {:?}", path);
     tx.send(Update::Training(TrainingUpdate::MAMDatasetStatus(
         "正在加载".to_string(),
     )))
@@ -229,7 +229,7 @@ pub fn load_recorded_dataset(
     }
 
     let msg = format!("MAM {}, AMA {}",loaded_mam,loaded_ama);
-    info!("[后端] {}", msg);
+    info!("录制数据集加载完成：{}", msg);
     tx.send(Update::Training(TrainingUpdate::MAMDatasetStatus(
         msg,
     )))
@@ -243,10 +243,7 @@ pub fn train_model(
     show_cm: bool,
     tx: &Sender<Update>,
 ) -> Result<()> {
-    info!("[后端] 开始训练模型");
-    tx.send(Update::Training(TrainingUpdate::TrainingStatus(
-        "准备数据...".to_string(),
-    )))?;
+    info!("开始训练模型");
 
     let training_state = &mut state.lock().training;
 
@@ -265,7 +262,7 @@ pub fn train_model(
         tx.send(Update::Training(TrainingUpdate::TrainingStatus(
             "数据集为空".to_string(),
         )))?;
-        info!("数据集为空");
+        tracing::warn!("数据集为空");
         return Ok(());
     }
 
@@ -291,9 +288,7 @@ pub fn train_model(
     let mut rng = thread_rng();
     let (train, valid) = dataset.shuffle(&mut rng).split_with_ratio(0.8);
 
-    tx.send(Update::Training(TrainingUpdate::TrainingStatus(
-        "正在训练...".to_string(),
-    )))?;
+    info!("正在训练");
     let model: FittedLogisticRegression<f64, usize> =
         LogisticRegression::default().fit(&train).unwrap();
 
@@ -302,7 +297,7 @@ pub fn train_model(
     let cm = predictions.confusion_matrix(valid.targets()).unwrap();
     let accuracy = cm.accuracy();
     let cm = calculate_binary_confusion_matrix(&predictions, valid.targets());
-    info!("[后端] 模型准确度: {}", accuracy);
+    info!("训练完成，模型准确度: {}", accuracy);
 
     // 发送图表数据
     tx.send(Update::Training(TrainingUpdate::TrainingPlotsReady {
@@ -318,11 +313,6 @@ pub fn train_model(
     }))
     .unwrap();
 
-    tx.send(Update::Training(TrainingUpdate::TrainingStatus(format!(
-        "训练完成, 准确度: {:.2}%",
-        accuracy * 100.0
-    ))))
-    .unwrap();
     tx.send(Update::Training(TrainingUpdate::ModelReady(true)))?;
 
     Ok(())
@@ -333,7 +323,7 @@ pub fn load_persistent_dataset(
     path: &Path,
     tx: &Sender<Update>,
 ) -> Result<()> {
-    info!("[后端] 开始加载常驻数据集于: {:?}", path);
+    info!("开始加载常驻数据集: {:?}", path);
     tx.send(Update::Training(TrainingUpdate::PersistentDatasetStatus(
         "正在加载".to_string(),
     )))
@@ -371,7 +361,7 @@ pub fn load_persistent_dataset(
     }
 
     let msg = format!("MAM {}, AMA {}",loaded_mam,loaded_ama);
-    info!("[后端] {}", msg);
+    info!("数据集加载完成 {}", msg);
     tx.send(Update::Training(TrainingUpdate::PersistentDatasetStatus(
         msg,
     )))
@@ -403,20 +393,19 @@ fn calculate_binary_confusion_matrix(
     if predictions.len() != targets.len() {
         // 在实际应用中，你可能需要返回一个 Result 或 panic
         // 为了简化，这里直接返回初始化的矩阵
-        eprintln!("错误: 预测和真实标签的长度不一致.");
+        tracing::error!("错误: 预测和真实标签的长度不一致.");
         return confusion_matrix;
     }
 
     // 遍历预测结果和真实标签
     let num_samples = predictions.len();
-    info!("{}", num_samples);
     for i in 0..num_samples {
         let true_label = targets[i];
         let predicted_label = predictions[i];
 
         // 确保标签是0或1
         if true_label > 1 || predicted_label > 1 {
-            eprintln!("警告: 存在非0或1的标签。此函数只适用于二分类。");
+             tracing::error!("警告: 存在非0或1的标签。此函数只适用于二分类。");
             continue;
         }
 

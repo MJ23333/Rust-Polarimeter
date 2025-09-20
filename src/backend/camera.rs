@@ -41,12 +41,12 @@ impl CameraManager {
                 let mut cam = match videoio::VideoCapture::new(camera_index, videoio::CAP_ANY) {
                     Ok(cam) => {
                         if !cam.is_opened().unwrap_or(false) {
-                            error!("后端：无法打开相机索引 {}", camera_index);
+                            error!("无法打开相机索引 {}", camera_index);
                             let _ = update_tx
                                 .send(Update::Device(DeviceUpdate::CameraConnectionStatus(false)));
                             return;
                         }
-                        info!("后端：相机 {} 已成功在捕获线程中打开", camera_index);
+                        info!("相机 {} 已成功在捕获线程中打开", camera_index);
                         let _ = update_tx
                             .send(Update::Device(DeviceUpdate::CameraConnectionStatus(true)));
                         cam
@@ -109,7 +109,7 @@ impl CameraManager {
                     }
                 }
 
-                info!("后端：相机捕获线程 {} 已停止", camera_index);
+                info!("相机捕获线程 {} 已停止", camera_index);
             })
         };
 
@@ -123,12 +123,12 @@ impl CameraManager {
 
 impl Drop for CameraManager {
     fn drop(&mut self) {
-        info!("后端：正在关闭 CameraManager...");
+        info!("正在关闭 CameraManager...");
         self.stop_signal.store(true, Ordering::Relaxed);
         if let Some(handle) = self.thread_handle.take() {
             handle.join().expect("无法 join 相机线程");
         }
-        info!("后端：CameraManager 已成功关闭。");
+        info!("CameraManager 已成功关闭。");
     }
 }
 
@@ -160,7 +160,7 @@ pub fn disconnect_camera(state: &Arc<Mutex<BackendState>>) -> Result<()> {
 // }
 
 pub fn refresh_cameras(update_tx: &Sender<Update>) -> Result<()> {
-    info!("[后端] 正在刷新相机列表...");
+    info!("正在刷新相机列表...");
     let mut devices = Vec::new();
     // 尝试前10个索引，与Python代码逻辑一致
     for i in 0..10 {
@@ -172,7 +172,7 @@ pub fn refresh_cameras(update_tx: &Sender<Update>) -> Result<()> {
             }
         }
     }
-    info!("[后端] 发现的相机: {:?}", devices);
+    info!("发现的相机: {:?}", devices);
     update_tx
         .send(Update::Device(DeviceUpdate::CameraList(devices)))
         .unwrap();

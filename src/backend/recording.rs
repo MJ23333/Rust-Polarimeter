@@ -72,7 +72,7 @@ pub fn record_video_loop(
         }
         // result
     });
-    info!("旋转操作已在后台线程启动。");
+    info!("旋转线程已启动");
     let mut saved_frame_count = 0;
     let start_time = Instant::now();
     let mut last_frame_time = Instant::now();
@@ -82,7 +82,7 @@ pub fn record_video_loop(
             break;
         }
         if rotation_handle.is_finished() {
-            info!("旋转操作完成，自动结束录制。");
+            info!("旋转操作完成，录制结束");
             break;
         }
         let now = Instant::now();
@@ -147,7 +147,7 @@ pub fn record_video_loop(
 
     // 保存总步数以备“倒带”
 
-    info!("录制正常结束，共 {} 帧",saved_frame_count);
+    info!("录制结束，共 {} 帧",saved_frame_count);
     if let Err(e) = rotation_handle.join() {
         tracing::error!("旋转线程 panic: {:?}", e);
     }

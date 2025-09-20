@@ -173,7 +173,7 @@ impl BackendState {
 
 /// 后端主循环 (修正后的最终版)
 pub fn backend_loop(cmd_rx: Receiver<Command>, update_tx: Sender<Update>) {
-    info!("后端线程已启动。");
+    info!("后端线程已启动");
     let mut active_tasks: Vec<BackgroundTask> = Vec::new();
     let state = Arc::new(Mutex::new(BackendState::new()));
     let global_shutdown_signal = state.lock().shutdown_signal.clone();
@@ -190,7 +190,6 @@ pub fn backend_loop(cmd_rx: Receiver<Command>, update_tx: Sender<Update>) {
             info!("状态监控线程已启动。");
             // 只要未收到取消信号，就持续运行
             while !token_for_monitor.load(Ordering::Relaxed) {
-                info!("检测");
                 {
                     // 使用独立的块来限制 MutexGuard 的生命周期
                     // 在这里获取 state 的锁
@@ -206,7 +205,7 @@ pub fn backend_loop(cmd_rx: Receiver<Command>, update_tx: Sender<Update>) {
                     }
                     if s.devices.camera_manager.is_none() {
                         s.devices.camera_manager = None;
-                        info!("相机断开1");
+                        info!("相机断开");
                         let _ =
                             tx.send(Update::Device(DeviceUpdate::CameraConnectionStatus(false)));
                     } else {
@@ -222,7 +221,7 @@ pub fn backend_loop(cmd_rx: Receiver<Command>, update_tx: Sender<Update>) {
                         match frame {
                             Some(_) => {}
                             None => {
-                                info!("相机断开2");
+                                info!("相机断开");
                                 s.devices.camera_manager = None;
                                 let _ = tx.send(Update::Device(
                                     DeviceUpdate::CameraConnectionStatus(false),
@@ -295,7 +294,6 @@ pub fn backend_loop(cmd_rx: Receiver<Command>, update_tx: Sender<Update>) {
 
     // --- 关停流程 (与之前相同) ---
     // --- 开始关停流程 ---
-    info!("后端接收到关停信号，开始清理...");
     {
         let mut state_guard = state.lock();
 
@@ -318,11 +316,11 @@ pub fn backend_loop(cmd_rx: Receiver<Command>, update_tx: Sender<Update>) {
         if let Err(e) = task.handle.join() {
             error!("等待任务 {} 时发生错误: {:?}", i, e);
         } else {
-            info!("任务 {} 已成功结束。", i);
+            info!("任务 {} 已成功结束", i);
         }
     }
 
-    info!("后端线程已完全清理并终止。");
+    info!("后端线程已完全清理并终止");
 }
 
 fn dispatch_command(

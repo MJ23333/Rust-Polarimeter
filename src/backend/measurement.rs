@@ -127,7 +127,7 @@ pub fn precision_rotate(
         steps = -steps;
         mul = -1;
     }
-    info!("旋转 {} steps", steps);
+    info!("旋转 {} 步", steps);
 
     let commands = if steps > 0 {
         vec![62, 60, 58, 56, 64, 66, 68] // 正转指令
@@ -177,7 +177,7 @@ pub fn precision_rotate(
             }
         }
     }
-    info!("旋转成功");
+    info!("旋转完成");
     Ok(())
 }
 
@@ -297,9 +297,6 @@ pub fn static_measurement(
         }
         s.measurement.static_task_token = Some(token.clone());
         tx.send(Update::Measurement(MeasurementUpdate::StaticRunning(true)))?;
-        tx.send(Update::Measurement(MeasurementUpdate::StaticStatus(
-            format!("开始静态测量"),
-        )))?;
         info!("开始静态测量");
     }
     let result = (|| -> Result<()> {
@@ -341,9 +338,6 @@ pub fn static_measurement(
                     return Err(anyhow!("测试中断"));
                 }
                 if s.devices.camera_manager.is_none() {
-                    tx.send(Update::Measurement(MeasurementUpdate::StaticStatus(
-                        format!("相机异常"),
-                    )))?;
                     s.devices.camera_manager = None;
                     tx.send(Update::Device(DeviceUpdate::CameraConnectionStatus(false)))?;
                     info!("相机异常");
@@ -361,9 +355,6 @@ pub fn static_measurement(
                 let frame = match frame {
                     Some(f) => f,
                     None => {
-                        tx.send(Update::Measurement(MeasurementUpdate::StaticStatus(
-                            format!("相机异常"),
-                        )))?;
                         s.devices.camera_manager = None;
                         tx.send(Update::Device(DeviceUpdate::CameraConnectionStatus(false)))?;
                         info!("相机异常");
@@ -392,7 +383,7 @@ pub fn static_measurement(
 
                 predictions.pop_front();
                 predictions.push_back(prediction);
-                info!("预测结果：{:?}", predictions);
+                // info!("预测结果：{:?}", predictions);
                 let mut should_break = false;
                 let mut pp = predictions.clone();
                 let pred_slice = pp.make_contiguous();
@@ -409,12 +400,8 @@ pub fn static_measurement(
                 }
                 // thread::sleep(Duration::from_millis(500));(- = 1 0)
 
-                if pred_slice == [0, 0, 0, 1, 1] {
-                    if !isama {
+                if predictions.iter().filter(|&x| *x == 1).count()>=3&&first==0 {
                         step_move(state, tx, MoveMode::ResetBackward)?;
-                    } else {
-                        step_move(state, tx, MoveMode::ResetForward)?;
-                    }
                     if result1.is_none() {
                         result1 = Some(state.lock().measurement.current_steps.unwrap());
                         first = 2;
@@ -425,12 +412,8 @@ pub fn static_measurement(
                         should_break = true;
                     }
                     thread::sleep(Duration::from_millis(150));
-                } else if pred_slice == [1, 1, 1, 0, 0] {
-                    if isama {
-                        step_move(state, tx, MoveMode::ResetBackward)?;
-                    } else {
+                } else if predictions.iter().filter(|&x| *x == 0).count()>=3&&first==1 {
                         step_move(state, tx, MoveMode::ResetForward)?;
-                    }
                     if result1.is_none() {
                         result1 = Some(state.lock().measurement.current_steps.unwrap());
                         first = 2;
@@ -442,20 +425,12 @@ pub fn static_measurement(
                     }
                     thread::sleep(Duration::from_millis(150));
                 } else if first == 1 {
-                    if !isama {
                         step_move(state, tx, MoveMode::StepForward)?;
-                    } else {
-                        step_move(state, tx, MoveMode::StepBackward)?;
-                    }
 
                     // should_break=true;
                     thread::sleep(Duration::from_millis(10));
                 } else {
-                    if isama {
-                        step_move(state, tx, MoveMode::StepForward)?;
-                    } else {
                         step_move(state, tx, MoveMode::StepBackward)?;
-                    }
                     // should_break=true;
                     thread::sleep(Duration::from_millis(10));
                 }
@@ -505,18 +480,13 @@ pub fn static_measurement(
         if find_zero {
             s.measurement.current_steps = None;
         }
-        tx.send(Update::Measurement(MeasurementUpdate::StaticStatus(
-            format!("测量失败：{}", e),
-        )))?;
+        info!("静态测量失败：{}", e);
     } else {
         if find_zero {
             s.measurement.current_steps = Some(0);
         }
 
-        info!("测量完成");
-        tx.send(Update::Measurement(MeasurementUpdate::StaticStatus(
-            format!("测量完成"),
-        )))?;
+        info!("静态测量完成");
     }
     tx.send(Update::Measurement(MeasurementUpdate::CurrentSteps(
         s.measurement.current_steps,
@@ -546,7 +516,6 @@ pub fn pre_rotation(
             }
         }
 
-        info!("开始预旋转");
         let mut predictions: VecDeque<usize> = VecDeque::from(vec![2; 5]);
         let timeout = Duration::from_secs(60);
         let start_time = Instant::now();
@@ -615,7 +584,7 @@ pub fn pre_rotation(
 
             predictions.pop_front();
             predictions.push_back(prediction);
-            info!("预测结果：{:?}", predictions);
+            // info!("预测结果：{:?}", predictions);
             let mut should_break = false;
             tx.send(Update::Measurement(MeasurementUpdate::DynamicStatus(
                 format!("预旋转中: {:?}", predictions),
@@ -627,35 +596,19 @@ pub fn pre_rotation(
             }
             // thread::sleep(Duration::from_millis(500));(- = 1 0)
 
-            if pred_slice == [0, 0, 0, 1, 1] {
-                if !isama {
+            if predictions.iter().filter(|&x| *x == 1).count()>=3&&first==0 {
                     step_move(state, tx, MoveMode::ResetBackward)?;
-                } else {
-                    step_move(state, tx, MoveMode::ResetForward)?;
-                }
                 should_break = true;
                 thread::sleep(Duration::from_millis(150));
-            } else if pred_slice == [1, 1, 1, 0, 0] {
-                if isama {
-                    step_move(state, tx, MoveMode::ResetBackward)?;
-                } else {
+            } else if predictions.iter().filter(|&x| *x == 0).count()>=3&&first==1 {
                     step_move(state, tx, MoveMode::ResetForward)?;
-                }
                 should_break = true;
                 thread::sleep(Duration::from_millis(150));
             } else if first == 1 {
-                if !isama {
                     step_move(state, tx, MoveMode::StepForward)?;
-                } else {
-                    step_move(state, tx, MoveMode::StepBackward)?;
-                }
                 thread::sleep(Duration::from_millis(10));
             } else {
-                if isama {
-                    step_move(state, tx, MoveMode::StepForward)?;
-                } else {
                     step_move(state, tx, MoveMode::StepBackward)?;
-                }
                 thread::sleep(Duration::from_millis(10));
             }
             tx.send(Update::Measurement(MeasurementUpdate::CurrentSteps(
@@ -737,10 +690,7 @@ pub fn run_dynamic_experiment_loop(
         //过五关斩六将，开始！
         s.measurement.dynamic_task_token = Some(token.clone());
         tx.send(Update::Measurement(MeasurementUpdate::DynamicRunning(true)))?;
-        info!("动态实验循环启动");
-        tx.send(Update::Measurement(MeasurementUpdate::DynamicStatus(
-            format!("开始运行"),
-        )))?;
+        info!("动态追踪启动");
         (
             s.rotation_direction_is_ama,
             // s.rotation_direction_need_reverse,
@@ -748,20 +698,18 @@ pub fn run_dynamic_experiment_loop(
         )
     };
     let result = (|| -> Result<()> {
+        info!("动态追踪：开始预旋转");
         pre_rotation(state, tx, token.clone())?;
         
         let params={
             state.lock().measurement.dynamic_params.clone()
         };
         precision_rotate(state, tx, (params.step_angle * 746.0).round() as i32)?;
-        info!("预旋转完成");
-        tx.send(Update::Measurement(MeasurementUpdate::DynamicStatus(
-            format!("预旋转完成"),
-        )))?;
+        info!("动态追踪：预旋转完成");
 
         let timeout = Duration::from_secs(1000);
         let mut predictions: VecDeque<usize> = VecDeque::from(vec![2; 5]);
-
+        let mut first=2;
         loop {
             let mut s = state.lock();
             if token.load(Ordering::Relaxed)
@@ -772,9 +720,6 @@ pub fn run_dynamic_experiment_loop(
                 return Ok(());
             }
             if s.devices.camera_manager.is_none() {
-                tx.send(Update::Measurement(MeasurementUpdate::DynamicStatus(
-                    format!("相机异常"),
-                )))?;
                 tx.send(Update::Measurement(MeasurementUpdate::CurrentSteps(
                     s.measurement.current_steps,
                 )))?;
@@ -794,9 +739,6 @@ pub fn run_dynamic_experiment_loop(
             let frame = match frame {
                 Some(f) => f,
                 None => {
-                    tx.send(Update::Measurement(MeasurementUpdate::DynamicStatus(
-                        format!("相机异常"),
-                    )))?;
                     tx.send(Update::Measurement(MeasurementUpdate::CurrentSteps(
                         s.measurement.current_steps,
                     )))?;
@@ -823,9 +765,11 @@ pub fn run_dynamic_experiment_loop(
                     Err(_) => continue,
                 };
             let prediction = prediction ^ (isama as usize);
+            if first==2{
+                first=prediction;
+            }
             predictions.pop_front();
             predictions.push_back(prediction);
-            info!("{:?}", predictions);
             // let mut should_break = false;
             let pred_slice = predictions.make_contiguous();
 
@@ -833,9 +777,9 @@ pub fn run_dynamic_experiment_loop(
             // drop(s);
             // thread::sleep(Duration::from_millis(500));(- = 1 0)
             let mut triggered = false;
-            if pred_slice == [0, 1, 1, 1, 1] {
+            if predictions.iter().filter(|&x| *x == 1).count()>=3&&first==0 {
                 triggered = true;
-            } else if pred_slice == [1, 0, 0, 0, 0] {
+            } else if predictions.iter().filter(|&x| *x == 0).count()>=3&&first==1 {
                 triggered = true;
             }
             if triggered {
@@ -853,9 +797,6 @@ pub fn run_dynamic_experiment_loop(
                         s.measurement.dynamic_results.clone(),
                     )))?;
                     info!("已测量第 {} 个点", s.measurement.dynamic_results.len());
-                    tx.send(Update::Measurement(MeasurementUpdate::DynamicStatus(
-                        format!("已测量第 {} 个点", s.measurement.dynamic_results.len()),
-                    )))?;
                     
                 }
                 let params={
@@ -865,6 +806,7 @@ pub fn run_dynamic_experiment_loop(
                 precision_rotate(state, tx, (params.step_angle * 746.0).round() as i32)?;
                 predictions = VecDeque::from(vec![2; 5]);
                 thread::sleep(Duration::from_millis(100));
+                first=2;
             }
 
             thread::sleep(Duration::from_millis(50));
@@ -882,31 +824,16 @@ pub fn run_dynamic_experiment_loop(
         false,
     )))?;
     if let Err(e) = &result {
-        info!(
-            "测量终止：{}，共测量 {} 个点",
-            e,
-            s.measurement.dynamic_results.len()
+        tracing::warn!(
+            "终止原因：{}",
+            e
         );
-        tx.send(Update::Measurement(MeasurementUpdate::DynamicStatus(
-            format!(
-                "测量终止：{}，共测量 {} 个点",
-                e,
-                s.measurement.dynamic_results.len()
-            ),
-        )))?;
-        drop(s);
-        precision_rotate_to(state, tx, 0)?;
-    } else {
+    } 
+    {
         info!(
             "测量完成，共测量 {} 个点",
             s.measurement.dynamic_results.len()
         );
-        tx.send(Update::Measurement(MeasurementUpdate::DynamicStatus(
-            format!(
-                "测量完成，共测量 {} 个点",
-                s.measurement.dynamic_results.len()
-            ),
-        )))?;
         drop(s);
         precision_rotate_to(state, tx, 0)?;
     }
@@ -933,16 +860,16 @@ pub fn save_static(
 ) -> Result<()> {
     let results = state.lock().measurement.static_results.clone();
     if results.is_empty() {
-        error!("空结果");
+        error!("静态测量结果为空");
         return Ok(());
     }
     if file_saver::save_static_results(&save_path, &results).is_err() {
-        error!("保存失败");
+        error!("静态测量保存失败");
     }
     tx.send(Update::Measurement(MeasurementUpdate::StaticStatus(
         "保存成功".to_string(),
     )))?;
-    info!("静态保存成功。");
+    info!("静态测量结果保存成功");
     Ok(())
 }
 pub fn save_dynamic_results(
@@ -953,15 +880,12 @@ pub fn save_dynamic_results(
     let s = state.lock();
     let results = s.measurement.dynamic_results.clone();
     if results.is_empty() {
-        error!("空结果");
+        error!("动态测量结果为空");
         return Ok(());
     }
     if file_saver::save_dynamic_results(&params.path, &results, &params).is_err() {
-        error!("保存失败");
+        error!("动态测量保存失败");
     }
-    tx.send(Update::Measurement(MeasurementUpdate::DynamicStatus(
-        format!("保存成功"),
-    )))?;
-    info!("保存成功");
+    info!("动态测量结果保存成功");
     Ok(())
 }

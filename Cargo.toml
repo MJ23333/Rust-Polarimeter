@@ -15,6 +15,7 @@ tracing = "0.1.40" # 日志库
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 egui-chinese-font = "0.1"
 serialport = "4.3.0" 
+egui_commonmark = {version="0.16.1",features=["macros"]}
 
 # --- 新增的相机功能依赖 ---
 opencv = "0.95.1" # 核心 OpenCV 绑定

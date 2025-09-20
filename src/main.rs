@@ -101,7 +101,7 @@ fn load_macos_chinese_font() -> Result<FontData> {
     
     for font_path in &font_paths {
         if let Ok(font_data) = std::fs::read(font_path) {
-            tracing::info!("{}",font_path);
+            tracing::info!("使用字体：{}",font_path);
             return Ok(FontData::from_owned(font_data));
         }
     }
