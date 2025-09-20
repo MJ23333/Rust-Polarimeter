@@ -19,8 +19,8 @@ jobs:
     
 
 
-    - name: Install OpenCV and LLVM
-      run: choco install opencv --version=4.11.0 -y; choco install llvm -y
+    # - name: Install OpenCV and LLVM
+    #   run: choco install opencv --version=4.11.0 -y; choco install llvm -y
 
     - name: Discover and Set OpenCV Environment Variables
       id: set_opencv_vars
@@ -42,13 +42,13 @@ jobs:
           Write-Output "OPENCV_LINK_PATHS=$LibPath"
           
           # Discover all library names in that path
-          $LibNames = (Get-ChildItem $LibPath -Filter *.lib).Name -replace '\.lib$' -join ','
-          if (-not $LibNames) {
-            Write-Error "Could not find any .lib files in $LibPath"
+          $ReleaseLibNames = (Get-ChildItem $LibPath -Filter "*[!d].lib").Name -replace '\.lib$' -join ','
+          if (-not $ReleaseLibNames) {
+            Write-Error "Could not find any RELEASE .lib files (not ending with d.lib) in $LibPath"
             exit 1
           }
-          echo "OPENCV_LINK_LIBS=$LibNames" >> $env:GITHUB_ENV
-          Write-Output "OPENCV_LINK_LIBS=$LibNames"
+          echo "OPENCV_LINK_LIBS=$ReleaseLibNames" >> $env:GITHUB_ENV
+          Write-Output "OPENCV_LINK_LIBS=$ReleaseLibNames"
          
       shell: pwsh
      # echo "OPENCV_INCLUDE_PATHS=C:\tools\opencv\build\include" >> $env:GITHUB_ENV
@@ -57,16 +57,16 @@ jobs:
           # echo "OPENCV_LINK_PATHS=C:\tools\opencv\build\x64\vc17\lib" >> $env:GITHUB_ENV
           
           # echo "OPENCV_LINK_LIBS=opencv_world4110" >> $env:GITHUB_ENV
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: ${{ matrix.rust }}
+    # - name: Install Rust
+    #   uses: dtolnay/rust-toolchain@stable
+    #   with:
+    #     toolchain: ${{ matrix.rust }}
 
-    # 新增步骤: 安装 cargo-bundle
+    # # 新增步骤: 安装 cargo-bundle
 
-    # 修改步骤: 使用 cargo bundle 而不是 cargo build
-    - name: Bundle the release executable
-      run: cargo build --release
+    # # 修改步骤: 使用 cargo bundle 而不是 cargo build
+    # - name: Bundle the release executable
+    #   run: cargo build --release
 
     # # 修改步骤: 上传打包好的产物
     # - name: Upload Artifact (zip)
@@ -74,14 +74,15 @@ jobs:
     #   with:
     #     name: windows-executable
     #     path: target/release/rust_polarimeter_gui.exe
+        #     Write-Output "Copying executable..."
+        # Copy-Item -Path "target/release/rust_polarimeter_gui.exe" -Destination $PKG_DIR
     - name: Create Distribution Package
       id: create_package
       run: |
         $PKG_DIR = "release_package"
         New-Item -ItemType Directory -Force -Path $PKG_DIR
 
-        Write-Output "Copying executable..."
-        Copy-Item -Path "target/release/rust_polarimeter_gui.exe" -Destination $PKG_DIR
+
 
         # ======================================================================
         # vvvvvvvvvvvvvv     模糊查找 DLL 的核心改进     vvvvvvvvvvvvvvvv
@@ -89,23 +90,14 @@ jobs:
         Write-Output "Copying OpenCV DLLs using wildcards..."
         $OpenCVBinDir = (Get-ChildItem "C:\tools\opencv\build\x64" -Directory | Where-Object { $_.Name -like 'vc*' } | Select-Object -First 1).FullName + "\bin"
 
-        # 使用通配符 '*' 查找 release 版的 world DLL
-        # `Get-ChildItem` 会返回一个文件对象列表，我们取第一个
         $ReleaseDll = Get-ChildItem -Path $OpenCVBinDir -Filter "opencv_world*[!d].dll" | Select-Object -First 1
         if ($ReleaseDll) {
-            Write-Output "Found Release DLL: $($ReleaseDll.Name)"
+            Write-Output "Found and copying Release DLL: $($ReleaseDll.Name)"
             Copy-Item -Path $ReleaseDll.FullName -Destination $PKG_DIR
         } else {
-            Write-Warning "Warning: Could not find the release OpenCV world DLL."
-        }
-
-        # 使用通配符 '*' 查找 debug 版的 world DLL (以 'd.dll' 结尾)
-        $DebugDll = Get-ChildItem -Path $OpenCVBinDir -Filter "opencv_world*d.dll" | Select-Object -First 1
-        if ($DebugDll) {
-            Write-Output "Found Debug DLL: $($DebugDll.Name)"
-            Copy-Item -Path $DebugDll.FullName -Destination $PKG_DIR
-        } else {
-            Write-Warning "Warning: Could not find the debug OpenCV world DLL."
+            # 如果找不到，构建应该失败，因为这是必需的依赖。
+            Write-Error "FATAL: Could not find the release OpenCV world DLL."
+            exit 1
         }
         # ======================================================================
         # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
