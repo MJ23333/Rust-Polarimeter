@@ -63,12 +63,12 @@ jobs:
         toolchain: ${{ matrix.rust }}
 
     # 新增步骤: 安装 cargo-bundle
-    # - name: Install cargo-bundle
-    #   run: cargo install cargo-bundle
+    - name: Install cargo-bundle
+      run: cargo install cargo-bundle
 
     # 修改步骤: 使用 cargo bundle 而不是 cargo build
     - name: Bundle the release executable
-      run: cargo build --release
+      run: cargo bundle --release
 
     # 修改步骤: 上传打包好的产物
     - name: Upload Artifact (zip)
