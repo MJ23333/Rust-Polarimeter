@@ -28,7 +28,7 @@ jobs:
     - name: Cache vcpkg
       uses: actions/cache@v4
       with:
-          path: ${{ env.VCPKG_ROOT }}
+          path: '${{ env.VCPKG_ROOT }}'
           # 当 vcpkg.json 文件变化时，缓存会失效
           key: ${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}
           restore-keys: |
@@ -37,11 +37,11 @@ jobs:
     - name: Setup and install vcpkg dependencies
       run: |
           # 如果缓存中没有 vcpkg，则克隆它
-          if (-not (Test-Path ${{ env.VCPKG_ROOT }})) {
-            git clone https://github.com/microsoft/vcpkg.git ${{ env.VCPKG_ROOT }}
+          if (-not (Test-Path '${{ env.VCPKG_ROOT }}')) {
+            git clone https://github.com/microsoft/vcpkg.git '${{ env.VCPKG_ROOT }}'
           }
           # 运行 vcpkg 的启动脚本
-          cd ${{ env.VCPKG_ROOT }}
+          cd '${{ env.VCPKG_ROOT }}'
           ./bootstrap-vcpkg.bat
           # 安装我们需要的库
           # 注意：这里我们使用 opencv4[contrib] 来获取更完整的功能
