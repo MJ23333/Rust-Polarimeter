@@ -27,10 +27,19 @@ jobs:
       run: |
           echo "OPENCV_INCLUDE_PATHS=C:\tools\opencv\build\include" >> $env:GITHUB_ENV
 
-          # Discover the lib path (robustly finds the vc* folder)
+          $IncludePath = "C:\tools\opencv\build\include"
+          echo "OPENCV_INCLUDE_PATHS=$IncludePath" >> $env:GITHUB_ENV
+          Write-Output "OPENCV_INCLUDE_PATHS=$IncludePath"
 
-          $LibPath = "C:\tools\opencv\build\x64\vc17\lib"
+          # Discover the lib path (robustly finds the vc* folder)
+          $LibDir = (Get-ChildItem "C:\tools\opencv\build\x64" -Directory | Where-Object { $_.Name -like 'vc*' } | Select-Object -First 1)
+          if (-not $LibDir) {
+            Write-Error "Could not find the VC++ version-specific lib directory in $env:OpenCV_DIR\x64"
+            exit 1
+          }
+          $LibPath = "$($LibDir.FullName)\lib"
           echo "OPENCV_LINK_PATHS=$LibPath" >> $env:GITHUB_ENV
+          Write-Output "OPENCV_LINK_PATHS=$LibPath"
           
           # Discover all library names in that path
           $LibNames = (Get-ChildItem $LibPath -Filter *.lib).Name -replace '\.lib$' -join ','
@@ -39,6 +48,7 @@ jobs:
             exit 1
           }
           echo "OPENCV_LINK_LIBS=$LibNames" >> $env:GITHUB_ENV
+          Write-Output "OPENCV_LINK_LIBS=$LibNames"
          
       shell: pwsh
      # echo "OPENCV_INCLUDE_PATHS=C:\tools\opencv\build\include" >> $env:GITHUB_ENV
