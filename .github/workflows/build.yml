@@ -5,11 +5,6 @@ on:
     branches: [ "main" ] # 当主分支有更新时触发
   workflow_dispatch: # 允许手动触发
 
-env:
-  # 设置 vcpkg 的根目录，以便在多个步骤中使用
-  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-  # 告诉 rust-vcpkg crate 我们要使用动态链接
-  VCPKGRS_DYNAMIC: '1'
 jobs:
   build-windows:
     runs-on: windows-latest # 使用最新的 Windows 环境
@@ -21,24 +16,32 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4 # 检出你的代码
 
-    - name: Set Environment Variables
-      run: |
-          echo "VCPKGRS_DYNAMIC=1" >> $env:GITHUB_ENV
-      shell: pwsh
-      # 3. 缓存 vcpkg 以加速构建
-    - name: vcpkg build
-      uses: johnwason/vcpkg-action@v7
-      id: vcpkg
-      with:
-        pkgs: opencv4 llvm
-        triplet: x64-windows-release
-        token: ${{ github.token }}
-  
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: ${{ matrix.rust }}
 
+
+    - name: Install OpenCV and LLVM
+      run: choco install opencv --version=4.9.0 -y; choco install llvm -y
+
+    - name: Set OpenCV Environment Variables from Choco
+      run: |
+          # 1. Find the necessary paths based on the OpenCV_DIR set by choco
+          $opencv_include_path = Join-Path $env:OpenCV_DIR "build\include"
+          # NOTE: The 'vc17' part might change with future Visual Studio versions on the runner
+          $opencv_lib_path = Join-Path $env:OpenCV_DIR "build\x64\vc17\lib"
+          
+          # 2. Set the environment variables for subsequent steps
+          echo "OPENCV_INCLUDE_PATHS=$opencv_include_path" >> $env:GITHUB_ENV
+          echo "OPENCV_LINK_PATHS=$opencv_lib_path" >> $env:GITHUB_ENV
+          # For a standard build, 'opencv_world' followed by the version number is typical
+          echo "OPENCV_LINK_LIBS=opencv_world490" >> $env:GITHUB_ENV
+          
+          # 3. (Optional) Verify the paths
+          Write-Host "Set OPENCV_INCLUDE_PATHS to: $opencv_include_path"
+          Write-Host "Set OPENCV_LINK_PATHS to: $opencv_lib_path"
+      shell: pwsh
     # 新增步骤: 安装 cargo-bundle
     - name: Install cargo-bundle
       run: cargo install cargo-bundle
