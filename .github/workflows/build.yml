@@ -19,30 +19,44 @@ jobs:
     
 
 
-    # - name: Install OpenCV and LLVM
-    #   run: choco install opencv -y; choco install llvm -y
+    - name: Install OpenCV and LLVM
+      run: choco install opencv -y; choco install llvm -y
 
-    # - name: Set OpenCV Environment Variables from Choco
-    #   run: |
-    #       # 1. Find the necessary paths based on the OpenCV_DIR set by choco
-    #       $opencv_include_path = Join-Path $env:OpenCV_DIR "build\include"
-    #       # NOTE: The 'vc17' part might change with future Visual Studio versions on the runner
-    #       $opencv_lib_path = Join-Path $env:OpenCV_DIR "build\x64\vc17\lib"
-          
-    #       # 2. Set the environment variables for subsequent steps
-    #       echo "OPENCV_INCLUDE_PATHS=$opencv_include_path" >> $env:GITHUB_ENV
-    #       echo "OPENCV_LINK_PATHS=$opencv_lib_path" >> $env:GITHUB_ENV
-    #       # For a standard build, 'opencv_world' followed by the version number is typical
-    #       echo "OPENCV_LINK_LIBS=opencv_world490" >> $env:GITHUB_ENV
-          
-    #       # 3. (Optional) Verify the paths
-    #       Write-Host "Set OPENCV_INCLUDE_PATHS to: $opencv_include_path"
-    #       Write-Host "Set OPENCV_LINK_PATHS to: $opencv_lib_path"
-    #   shell: pwsh
-    - uses: Dovyski/setup-opencv-action@v1.1
-      with:
-        opencv-version: '4.9.0'
+    - name: Discover and Set OpenCV Environment Variables
+      id: set_opencv_vars
+      run: |
+          # Chocolatey sets the OpenCV_DIR variable, which is our starting point.
+          if (-not $env:OpenCV_DIR) {
+            Write-Error "OpenCV_DIR environment variable not set by Chocolatey. Cannot proceed."
+            exit 1
+          }
+          Write-Output "Found OpenCV_DIR at: $env:OpenCV_DIR"
 
+          # Discover the include path
+          $IncludePath = "$env:OpenCV_DIR\include"
+          echo "OPENCV_INCLUDE_PATHS=$IncludePath" >> $env:GITHUB_ENV
+          Write-Output "OPENCV_INCLUDE_PATHS=$IncludePath"
+
+          # Discover the lib path (robustly finds the vc* folder)
+          $LibDir = (Get-ChildItem "$env:OpenCV_DIR\x64" -Directory | Where-Object { $_.Name -like 'vc*' } | Select-Object -First 1)
+          if (-not $LibDir) {
+            Write-Error "Could not find the VC++ version-specific lib directory in $env:OpenCV_DIR\x64"
+            exit 1
+          }
+          $LibPath = "$($LibDir.FullName)\lib"
+          echo "OPENCV_LINK_PATHS=$LibPath" >> $env:GITHUB_ENV
+          Write-Output "OPENCV_LINK_PATHS=$LibPath"
+          
+          # Discover all library names in that path
+          $LibNames = (Get-ChildItem $LibPath -Filter *.lib).Name -replace '\.lib$' -join ','
+          if (-not $LibNames) {
+            Write-Error "Could not find any .lib files in $LibPath"
+            exit 1
+          }
+          echo "OPENCV_LINK_LIBS=$LibNames" >> $env:GITHUB_ENV
+          Write-Output "OPENCV_LINK_LIBS=$LibNames"
+      shell: pwsh
+    
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
