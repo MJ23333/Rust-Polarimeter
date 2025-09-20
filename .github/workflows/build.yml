@@ -72,8 +72,5 @@ jobs:
     - name: Upload Artifact (zip)
       uses: actions/upload-artifact@v4
       with:
-        name: windows-bundle-zip
-        # cargo bundle 会把所有东西放在 target/release/bundle/os-arch/你的程序名/ 目录下
-        # 我们把它压缩并上传
-        path: |
-          target/release/
+        name: windows-executable
+        path: target/release/rust_polarimeter_gui.exe
