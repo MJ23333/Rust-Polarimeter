@@ -171,7 +171,7 @@ fn main() -> eframe::Result<()> {
     };
     
     eframe::run_native(
-        "旋光仪 v1.5.4 Rust",
+        "旋光仪控制软件 v1.5.5",
         options,
         // 将后端线程的 handle 传递给 App
         Box::new(|cc| {

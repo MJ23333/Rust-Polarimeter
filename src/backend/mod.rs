@@ -8,15 +8,14 @@ mod serial;
 
 use self::camera::{CameraManager, CameraSettings};
 use crate::communication::{
-    Command, DataProcessingStateUpdate, DeviceCommand, DeviceUpdate, GeneralCommand, GeneralUpdate,
-    MeasurementUpdate, RegressionMode, Update,
+    Command, DataProcessingStateUpdate, DeviceCommand, DeviceUpdate, DynamicExpParams, GeneralCommand, GeneralUpdate, MeasurementUpdate, RegressionMode, Update
 };
 use crossbeam_channel::{Receiver, Sender};
 use parking_lot::Mutex;
-use std::sync::{
+use std::{path::PathBuf, sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
-};
+}};
 use std::thread;
 use std::time::Duration;
 use tracing::{error, info};
@@ -75,6 +74,7 @@ pub struct MeasurementState {
     dynamic_results: Vec<DynamicResult>,
     dynamic_task_token: Option<CancellationToken>,
     dynamic_time: Option<std::time::Instant>,
+    dynamic_params: DynamicExpParams
 }
 #[derive(Clone, Debug)]
 pub struct DataProcessingState {
@@ -153,6 +153,15 @@ impl BackendState {
                 dynamic_results: Vec::new(),
                 dynamic_task_token: None,
                 dynamic_time: None,
+                dynamic_params: DynamicExpParams {
+                path: PathBuf::new(),
+                temperature: 25.0,
+                sucrose_conc: 0.0,
+                hcl_conc: 0.0,
+                pre_rotation_angle: 5.0,
+                step_angle: -0.5,
+                sample_points: 12,
+            },
             },
             data_processing: DataProcessingState::new(),
             rotation_direction_is_ama: false,

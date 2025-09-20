@@ -3,7 +3,7 @@ use super::{Arc, BackendState, CancellationToken, Mutex};
 use crate::communication::*;
 use anyhow::{anyhow, Result};
 use crossbeam_channel::Sender;
-use rust_xlsxwriter::{Workbook, XlsxError,Format};
+use rust_xlsxwriter::{Format, Workbook, XlsxError};
 use std::io::{self, BufRead, BufReader};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -55,29 +55,23 @@ mod file_saver {
         // 写入每一项参数，格式为 "标签: 值"
         worksheet.write_string_with_format(0, param_key_col, "实验参数", &bold_format)?;
 
-        worksheet.write_string(2, param_key_col, "学生姓名")?;
-        worksheet.write_string(2, param_value_col, &params.student_name)?;
+        worksheet.write_string(2, param_key_col, "实验温度 (°C)")?;
+        worksheet.write_number(2, param_value_col, params.temperature)?;
 
-        worksheet.write_string(3, param_key_col, "学号")?;
-        worksheet.write_string(3, param_value_col, &params.student_id)?;
+        worksheet.write_string(3, param_key_col, "蔗糖浓度")?;
+        worksheet.write_number(3, param_value_col, params.sucrose_conc)?;
 
-        worksheet.write_string(4, param_key_col, "实验温度 (°C)")?;
-        worksheet.write_number(4, param_value_col, params.temperature)?;
+        worksheet.write_string(4, param_key_col, "盐酸浓度")?;
+        worksheet.write_number(4, param_value_col, params.hcl_conc)?;
 
-        worksheet.write_string(5, param_key_col, "蔗糖浓度")?;
-        worksheet.write_number(5, param_value_col, params.sucrose_conc)?;
+        worksheet.write_string(5, param_key_col, "初始旋光角")?;
+        worksheet.write_number(5, param_value_col, params.pre_rotation_angle)?;
 
-        worksheet.write_string(6, param_key_col, "盐酸浓度")?;
-        worksheet.write_number(6, param_value_col, params.hcl_conc)?;
+        worksheet.write_string(6, param_key_col, "步进角")?;
+        worksheet.write_number(6, param_value_col, params.step_angle)?;
 
-        worksheet.write_string(7, param_key_col, "初始旋光角")?;
-        worksheet.write_number(7, param_value_col, params.pre_rotation_angle)?;
-
-        worksheet.write_string(8, param_key_col, "步进角")?;
-        worksheet.write_number(8, param_value_col, params.step_angle)?;
-
-        worksheet.write_string(9, param_key_col, "采样点数")?;
-        worksheet.write_number(9, param_value_col, params.sample_points)?;
+        worksheet.write_string(7, param_key_col, "采样点数")?;
+        worksheet.write_number(7, param_value_col, params.sample_points)?;
 
         // // --- 3. (可选但推荐) 调整列宽以获得更好的可读性 ---
         // worksheet.set_column_width(0, 3, 12)?; // A-D列宽度
@@ -129,7 +123,7 @@ pub fn precision_rotate(
 ) -> Result<()> {
     let mut steps = steps;
     let mut mul = 1;
-    if {state.lock().rotation_direction_need_reverse} {
+    if { state.lock().rotation_direction_need_reverse } {
         steps = -steps;
         mul = -1;
     }
@@ -217,11 +211,7 @@ enum MoveMode {
     ResetBackward,
 }
 
-fn step_move(
-    state: &Arc<Mutex<BackendState>>,
-    tx: &Sender<Update>,
-    mode: MoveMode,
-) -> Result<()> {
+fn step_move(state: &Arc<Mutex<BackendState>>, tx: &Sender<Update>, mode: MoveMode) -> Result<()> {
     // let mut s = state.lock();
     let mut s = state.lock();
     if s.devices.serial_port.is_none() {
@@ -233,7 +223,7 @@ fn step_move(
         return Err(anyhow!("执行失败，请重新连接串口并找零点：串口断开"));
     }
     let port = s.devices.serial_port.as_mut().unwrap().clone();
-    let need_reverse=s.rotation_direction_need_reverse;
+    let need_reverse = s.rotation_direction_need_reverse;
     drop(s);
     let (command, steps) = {
         if !need_reverse {
@@ -277,6 +267,7 @@ pub fn static_measurement(
     tx: &Sender<Update>,
     token: CancellationToken,
     find_zero: bool,
+    times: i32,
 ) -> Result<()> {
     // if state.lock().training.fitted_model.is_none() || state.lock().devices.camera_manager.is_none() || state.lock().devices.serial_port.is_none()
     // {
@@ -312,55 +303,44 @@ pub fn static_measurement(
         info!("开始静态测量");
     }
     let result = (|| -> Result<()> {
-        let mut predictions: VecDeque<usize> = VecDeque::from(vec![2; 5]);
-        let timeout = Duration::from_secs(60);
-        let start_time = Instant::now();
-        let mut first = 2;
-        let mut result1: Option<i32> = None;
-        let mut result2: Option<i32> = None;
-        let (model, isama) = {
-            let mut s = state.lock();
-            if find_zero {
-                s.measurement.current_steps = Some(0); //临时值
-            }
-            (
-                s.training.fitted_model.as_ref().unwrap().clone(),
-                s.rotation_direction_is_ama,
-                // s.rotation_direction_need_reverse,
-            )
-        };
-        loop {
-            let mut s = state.lock();
-            if start_time.elapsed() > timeout || token.load(Ordering::Relaxed) {
-                // tx.send(Update::Measurement(MeasurementUpdate::StaticStatus(
-                //     "不正常终止".to_string(),
-                // )))?;
+        for i in 0..times {
+            // 在每次循环开始时检查是否已请求中断
+            if token.load(Ordering::Relaxed) {
                 tx.send(Update::Measurement(MeasurementUpdate::StaticStatus(
-                    format!("测试中断"),
+                    "测试被用户中断".to_string(),
                 )))?;
-                return Err(anyhow!("测试中断"));
+                return Err(anyhow!("测试被用户中断"));
             }
-            if s.devices.camera_manager.is_none() {
-                tx.send(Update::Measurement(MeasurementUpdate::StaticStatus(
-                    format!("相机异常"),
-                )))?;
-                s.devices.camera_manager = None;
-                tx.send(Update::Device(DeviceUpdate::CameraConnectionStatus(false)))?;
-                info!("相机异常");
-                return Err(anyhow!("相机异常"));
-            }
-            let frame = {
-                s.devices
-                    .camera_manager
-                    .as_ref()
-                    .unwrap()
-                    .latest_frame
-                    .lock()
-                    .clone()
+            let mut predictions: VecDeque<usize> = VecDeque::from(vec![2; 5]);
+            let timeout = Duration::from_secs(60);
+            let start_time = Instant::now();
+            let mut first = 2;
+            let mut result1: Option<i32> = None;
+            let mut result2: Option<i32> = None;
+            let (model, isama) = {
+                let mut s = state.lock();
+                if find_zero {
+                    s.measurement.current_steps = Some(0); //临时值
+                }
+                (
+                    s.training.fitted_model.as_ref().unwrap().clone(),
+                    s.rotation_direction_is_ama,
+                    // s.rotation_direction_need_reverse,
+                )
             };
-            let frame = match frame {
-                Some(f) => f,
-                None => {
+            let mut first_first=2;
+            loop {
+                let mut s = state.lock();
+                if start_time.elapsed() > timeout || token.load(Ordering::Relaxed) {
+                    // tx.send(Update::Measurement(MeasurementUpdate::StaticStatus(
+                    //     "不正常终止".to_string(),
+                    // )))?;
+                    tx.send(Update::Measurement(MeasurementUpdate::StaticStatus(
+                        format!("测试中断"),
+                    )))?;
+                    return Err(anyhow!("测试中断"));
+                }
+                if s.devices.camera_manager.is_none() {
                     tx.send(Update::Measurement(MeasurementUpdate::StaticStatus(
                         format!("相机异常"),
                     )))?;
@@ -369,112 +349,154 @@ pub fn static_measurement(
                     info!("相机异常");
                     return Err(anyhow!("相机异常"));
                 }
-            };
-
-            let guard2 = s.devices.camera_settings.lock();
-            let circle = {
-                if guard2.lock_circle {
-                    guard2.locked_circle
-                } else {
-                    None
-                }
-            };
-            let min_radius = guard2.min_radius;
-            let max_radius = guard2.max_radius;
-            drop(guard2);
-            drop(s);
-            let prediction =
-                match predict_from_frame(&frame, &model, min_radius, max_radius, circle) {
-                    Ok(p) => p,
-                    Err(_) => continue,
+                let frame = {
+                    s.devices
+                        .camera_manager
+                        .as_ref()
+                        .unwrap()
+                        .latest_frame
+                        .lock()
+                        .clone()
                 };
-            let prediction = prediction ^ (isama as usize);
+                let frame = match frame {
+                    Some(f) => f,
+                    None => {
+                        tx.send(Update::Measurement(MeasurementUpdate::StaticStatus(
+                            format!("相机异常"),
+                        )))?;
+                        s.devices.camera_manager = None;
+                        tx.send(Update::Device(DeviceUpdate::CameraConnectionStatus(false)))?;
+                        info!("相机异常");
+                        return Err(anyhow!("相机异常"));
+                    }
+                };
 
-            predictions.pop_front();
-            predictions.push_back(prediction);
-            info!("预测结果：{:?}", predictions);
-            let mut should_break = false;
-            let mut pp = predictions.clone();
-            let pred_slice = pp.make_contiguous();
-            if first == 2 {
-                first = prediction;
+                let guard2 = s.devices.camera_settings.lock();
+                let circle = {
+                    if guard2.lock_circle {
+                        guard2.locked_circle
+                    } else {
+                        None
+                    }
+                };
+                let min_radius = guard2.min_radius;
+                let max_radius = guard2.max_radius;
+                drop(guard2);
+                drop(s);
+                let prediction =
+                    match predict_from_frame(&frame, &model, min_radius, max_radius, circle) {
+                        Ok(p) => p,
+                        Err(_) => continue,
+                    };
+                let prediction = prediction ^ (isama as usize);
+
+                predictions.pop_front();
+                predictions.push_back(prediction);
+                info!("预测结果：{:?}", predictions);
+                let mut should_break = false;
+                let mut pp = predictions.clone();
+                let pred_slice = pp.make_contiguous();
+                if first == 2 {
+                    first = prediction;
+                }
+                if first_first==2{
+                    first_first = prediction;
+                    if prediction ==0{
+                        precision_rotate(state, tx, 746)?;
+                    }else{
+                        precision_rotate(state, tx, -746)?;
+                    }
+                }
+                // thread::sleep(Duration::from_millis(500));(- = 1 0)
+
+                if pred_slice == [0, 0, 0, 1, 1] {
+                    if !isama {
+                        step_move(state, tx, MoveMode::ResetBackward)?;
+                    } else {
+                        step_move(state, tx, MoveMode::ResetForward)?;
+                    }
+                    if result1.is_none() {
+                        result1 = Some(state.lock().measurement.current_steps.unwrap());
+                        first = 2;
+                        predictions = VecDeque::from(vec![2; 5]);
+                        precision_rotate(state, tx, -700)?;
+                    } else {
+                        result2 = Some(state.lock().measurement.current_steps.unwrap());
+                        should_break = true;
+                    }
+                    thread::sleep(Duration::from_millis(150));
+                } else if pred_slice == [1, 1, 1, 0, 0] {
+                    if isama {
+                        step_move(state, tx, MoveMode::ResetBackward)?;
+                    } else {
+                        step_move(state, tx, MoveMode::ResetForward)?;
+                    }
+                    if result1.is_none() {
+                        result1 = Some(state.lock().measurement.current_steps.unwrap());
+                        first = 2;
+                        predictions = VecDeque::from(vec![2; 5]);
+                        precision_rotate(state, tx, 700)?;
+                    } else {
+                        result2 = Some(state.lock().measurement.current_steps.unwrap());
+                        should_break = true;
+                    }
+                    thread::sleep(Duration::from_millis(150));
+                } else if first == 1 {
+                    if !isama {
+                        step_move(state, tx, MoveMode::StepForward)?;
+                    } else {
+                        step_move(state, tx, MoveMode::StepBackward)?;
+                    }
+
+                    // should_break=true;
+                    thread::sleep(Duration::from_millis(10));
+                } else {
+                    if isama {
+                        step_move(state, tx, MoveMode::StepForward)?;
+                    } else {
+                        step_move(state, tx, MoveMode::StepBackward)?;
+                    }
+                    // should_break=true;
+                    thread::sleep(Duration::from_millis(10));
+                }
+                if !find_zero {
+                    tx.send(Update::Measurement(MeasurementUpdate::CurrentSteps(
+                        state.lock().measurement.current_steps,
+                    )))?;
+                }
+                if should_break {
+                    break;
+                }
+                if pred_slice == [0, 0, 0, 0, 0] {
+                    first = 0;
+                }
+                if pred_slice == [1, 1, 1, 1, 1] {
+                    first = 1;
+                }
             }
-            // thread::sleep(Duration::from_millis(500));(- = 1 0)
+            if result1.is_some() && result2.is_some() {
+                let st = { state.lock().measurement.current_steps.unwrap() };
+                precision_rotate(
+                    state,
+                    tx,
+                    ((((result1.unwrap() + result2.unwrap()) as f64) / 2.0).round() as i32) - st,
+                )?;
+                if !find_zero {
+                    let mut s = state.lock();
+                    let result = StaticResult {
+                        index: s.measurement.static_results.len() + 1,
+                        steps: s.measurement.current_steps.unwrap(),
+                        angle: s.measurement.current_steps.unwrap() as f32 / 746.0,
+                    };
+                    s.measurement.static_results.push(result);
 
-            if pred_slice == [0, 0, 0, 1, 1] {
-                if !isama {
-                    step_move(state, tx, MoveMode::ResetBackward)?;
-                } else {
-                    step_move(state, tx, MoveMode::ResetForward)?;
+                    tx.send(Update::Measurement(MeasurementUpdate::StaticResults(
+                        s.measurement.static_results.clone(),
+                    )))?;
                 }
-                if result1.is_none() {
-                    result1 = Some(state.lock().measurement.current_steps.unwrap());
-                    first = 2;
-                    predictions = VecDeque::from(vec![2; 5]);
-                    precision_rotate(state, tx, -700)?;
-                } else {
-                    result2 = Some(state.lock().measurement.current_steps.unwrap());
-                    should_break = true;
-                }
-                thread::sleep(Duration::from_millis(150));
-            } else if pred_slice == [1, 1, 1, 0, 0] {
-                if isama {
-                    step_move(state, tx, MoveMode::ResetBackward, )?;
-                } else {
-                    step_move(state, tx, MoveMode::ResetForward, )?;
-                }
-                if result1.is_none() {
-                    result1 = Some(state.lock().measurement.current_steps.unwrap());
-                    first = 2;
-                    predictions = VecDeque::from(vec![2; 5]);
-                    precision_rotate(state, tx, 700,)?;
-                } else {
-                    result2 = Some(state.lock().measurement.current_steps.unwrap());
-                    should_break = true;
-                }
-                thread::sleep(Duration::from_millis(150));
-            } else if first == 1 {
-                if !isama {
-                    step_move(state, tx, MoveMode::StepForward, )?;
-                } else {
-                    step_move(state, tx, MoveMode::StepBackward, )?;
-                }
-
-                // should_break=true;
-                thread::sleep(Duration::from_millis(10));
             } else {
-                if isama {
-                    step_move(state, tx, MoveMode::StepForward)?;
-                } else {
-                    step_move(state, tx, MoveMode::StepBackward)?;
-                }
-                // should_break=true;
-                thread::sleep(Duration::from_millis(10));
+                return Err(anyhow!("双向逼近失败"));
             }
-            if !find_zero {
-                tx.send(Update::Measurement(MeasurementUpdate::CurrentSteps(
-                    state.lock().measurement.current_steps,
-                )))?;
-            }
-            if should_break {
-                break;
-            }
-            if pred_slice == [0, 0, 0, 0, 0] {
-                first = 0;
-            }
-            if pred_slice == [1, 1, 1, 1, 1] {
-                first = 1;
-            }
-        }
-        if result1.is_some() && result2.is_some() {
-            let st = { state.lock().measurement.current_steps.unwrap() };
-            precision_rotate(
-                state,
-                tx,
-                ((((result1.unwrap() + result2.unwrap()) as f64) / 2.0).round() as i32) - st,
-            )?;
-        } else {
-            return Err(anyhow!("双向逼近失败"));
         }
         Ok(())
     })();
@@ -489,17 +511,6 @@ pub fn static_measurement(
     } else {
         if find_zero {
             s.measurement.current_steps = Some(0);
-        } else {
-            let result = StaticResult {
-                index: s.measurement.static_results.len() + 1,
-                steps: s.measurement.current_steps.unwrap(),
-                angle: s.measurement.current_steps.unwrap() as f32 / 746.0,
-            };
-            s.measurement.static_results.push(result);
-
-            tx.send(Update::Measurement(MeasurementUpdate::StaticResults(
-                s.measurement.static_results.clone(),
-            )))?;
         }
 
         info!("测量完成");
@@ -677,7 +688,6 @@ pub fn pre_rotation(
 
 pub fn run_dynamic_experiment_loop(
     state: &Arc<Mutex<BackendState>>,
-    params: DynamicExpParams,
     tx: &Sender<Update>,
     token: CancellationToken,
 ) -> Result<()> {
@@ -739,11 +749,11 @@ pub fn run_dynamic_experiment_loop(
     };
     let result = (|| -> Result<()> {
         pre_rotation(state, tx, token.clone())?;
-        precision_rotate(
-            state,
-            tx,
-            (params.step_angle * 746.0).round() as i32,
-        )?;
+        
+        let params={
+            state.lock().measurement.dynamic_params.clone()
+        };
+        precision_rotate(state, tx, (params.step_angle * 746.0).round() as i32)?;
         info!("预旋转完成");
         tx.send(Update::Measurement(MeasurementUpdate::DynamicStatus(
             format!("预旋转完成"),
@@ -755,7 +765,7 @@ pub fn run_dynamic_experiment_loop(
         loop {
             let mut s = state.lock();
             if token.load(Ordering::Relaxed)
-                || s.measurement.dynamic_results.len() >= params.sample_points as usize
+                || s.measurement.dynamic_results.len() >= s.measurement.dynamic_params.sample_points as usize
                 || s.measurement.dynamic_time.unwrap().elapsed() > timeout
             {
                 // s.measurement.current_static_steps = None;
@@ -846,13 +856,13 @@ pub fn run_dynamic_experiment_loop(
                     tx.send(Update::Measurement(MeasurementUpdate::DynamicStatus(
                         format!("已测量第 {} 个点", s.measurement.dynamic_results.len()),
                     )))?;
+                    
                 }
-
-                precision_rotate(
-                    state,
-                    tx,
-                    (params.step_angle * 746.0).round() as i32,
-                )?;
+                let params={
+                    state.lock().measurement.dynamic_params.clone()
+                };
+                save_dynamic_results(state, tx, params.clone())?;
+                precision_rotate(state, tx, (params.step_angle * 746.0).round() as i32)?;
                 predictions = VecDeque::from(vec![2; 5]);
                 thread::sleep(Duration::from_millis(100));
             }
@@ -908,9 +918,8 @@ pub fn return_to_zero(state: &Arc<Mutex<BackendState>>, tx: &Sender<Update>) -> 
     // let mut s = state.lock();
     if let Some(steps) = {
         let s = state.lock();
-        
+
         s.measurement.current_steps
-        
     } {
         precision_rotate(&state, tx, -steps)?;
     }
@@ -938,9 +947,8 @@ pub fn save_static(
 }
 pub fn save_dynamic_results(
     state: &Arc<Mutex<BackendState>>,
-    save_path: PathBuf,
     tx: &Sender<Update>,
-    params: DynamicExpParams
+    params: DynamicExpParams,
 ) -> Result<()> {
     let s = state.lock();
     let results = s.measurement.dynamic_results.clone();
@@ -948,11 +956,12 @@ pub fn save_dynamic_results(
         error!("空结果");
         return Ok(());
     }
-    if file_saver::save_dynamic_results(&save_path, &results,&params).is_err() {
+    if file_saver::save_dynamic_results(&params.path, &results, &params).is_err() {
         error!("保存失败");
     }
     tx.send(Update::Measurement(MeasurementUpdate::DynamicStatus(
         format!("保存成功"),
     )))?;
+    info!("保存成功");
     Ok(())
 }

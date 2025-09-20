@@ -7,12 +7,13 @@ use crossbeam_channel::{Receiver, Sender};
 use egui::{
     CentralPanel, Color32, ComboBox, DragValue, Frame, RichText, Stroke, TopBottomPanel, Ui,
 };
+use egui::{Pos2, Rect, Vec2}; // 新增：导入 Rect, Pos2, Vec2
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{Line, Plot, PlotPoints, Points};
-use egui::{Rect, Pos2, Vec2}; // 新增：导入 Rect, Pos2, Vec2
+use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
-use std::collections::VecDeque;
 use tracing::Level;
 
 // 新增：用于管理左侧主工作区当前显示的标签页
@@ -63,7 +64,7 @@ pub struct PolarimeterApp {
     max_radius: u32,
     camera_lock_circle: bool,
     camera_view_rect: Option<Rect>, // 用 Rect 存储当前视图的范围 (uv-coordinates)
-    is_dragging_camera_view: bool,   // 标记是否正在拖动视图
+    is_dragging_camera_view: bool,  // 标记是否正在拖动视图
 
     // --- 录制 (控制在模型训练标签页) ---
     is_recording: bool,
@@ -88,6 +89,7 @@ pub struct PolarimeterApp {
     static_pre_rotation_angle: f32,
     static_measurement_status: String,
     static_results: Vec<StaticResult>,
+    static_times: i32,
 
     // --- 窗口 4: 动态测量 ---
     dynamic_params: DynamicExpParams,
@@ -147,7 +149,7 @@ impl eframe::App for PolarimeterApp {
         TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label("v2.0.0-Rust (Tabbed Layout)");
+                    ui.label("v1.5.5");
                 });
             });
         });
@@ -169,7 +171,7 @@ impl eframe::App for PolarimeterApp {
                 // 标准布局
                 egui::SidePanel::right("monitor_panel")
                     .exact_width(panel_width) // 精确设置宽度为50%
-                    .resizable(false)       // 禁用拖动
+                    .resizable(false) // 禁用拖动
                     .show(ctx, |ui| {
                         self.draw_monitor_panel(ui);
                     });
@@ -251,8 +253,7 @@ impl PolarimeterApp {
             static_measurement_status: "空闲".to_string(),
             static_results: Vec::new(),
             dynamic_params: DynamicExpParams {
-                student_name: "".to_string(),
-                student_id: "".to_string(),
+                path: PathBuf::new(),
                 temperature: 25.0,
                 sucrose_conc: 0.0,
                 hcl_conc: 0.0,
@@ -272,6 +273,7 @@ impl PolarimeterApp {
             raw_plot_data: Arc::new(Vec::new()),
             plot_scatter_points: Vec::new(),
             plot_line_points: Vec::new(),
+            static_times: 1,
         }
     }
 
@@ -284,13 +286,14 @@ impl PolarimeterApp {
                     GeneralUpdate::Error(err_msg) => {
                         self.status_message = format!("错误: {}", err_msg);
                     }
-                    GeneralUpdate::NewLog(log_line) => { // <--- 新增的处理分支
-                    self.log_buffer.push_back(log_line);
-                    // 如果日志超过100条，就从前面移除旧的
-                    if self.log_buffer.len() > 100 {
-                        self.log_buffer.pop_front();
+                    GeneralUpdate::NewLog(log_line) => {
+                        // <--- 新增的处理分支
+                        self.log_buffer.push_back(log_line);
+                        // 如果日志超过100条，就从前面移除旧的
+                        if self.log_buffer.len() > 100 {
+                            self.log_buffer.pop_front();
+                        }
                     }
-                }
                 },
                 Update::Device(update) => match update {
                     DeviceUpdate::SerialPortsList(ports) => {
@@ -401,16 +404,14 @@ impl PolarimeterApp {
                 ui.add_space(ui.available_height() * 0.1); // 顶部留白
 
                 let welcome_text = RichText::new(
-                    r#"欢迎使用旋光仪控制软件 v2.1.0
-本软件专为蔗糖水解反应动力学实验设计，旨在提供一个清晰、高效、一体化的操作与数据分析平台。
-
+                    r#"欢迎使用旋光仪控制软件 v1.5.5
 请遵循顶部标签页的引导，按以下顺序完成实验：
 1.  设备控制: 连接并检查旋光仪电机与相机硬件。
 2.  模型训练: (首次使用或更换环境时) 录制视频并训练用于识别旋光状态的 AI 模型。
-3.  动态测量: 填入实验参数，开始自动化的数据采集流程。
-4.  数据处理: 导入实验数据，进行一级反应动力学拟合与分析。
+3.  静态与动态测量: 填入实验参数，开始自动化的数据采集流程。
+4.  数据处理: 导入实验数据，动力学拟合与分析。
 
-祝您实验顺利！"#,
+祝实验顺利！"#,
                 )
                 .heading()
                 .line_height(Some(32.0));
@@ -422,89 +423,94 @@ impl PolarimeterApp {
     fn draw_monitor_panel(&mut self, ui: &mut Ui) {
         // 该函数现在负责管理自己的内部布局，而不是依赖外部滚动条
         // --- 1. 顶部区域：状态清单 (固定高度) ---
-        egui::TopBottomPanel::top("monitor_top_panel").frame(egui::Frame::none()).show_inside(ui, |ui| {
-            ui.heading("监视与状态");
-            ui.separator();
-            ui.label(RichText::new("准备清单").strong());
-            ui.group(|ui| {
-                ui.set_width(ui.available_width()); // 占满宽度
-                let serial_status_text = if self.is_serial_connected {
-                    RichText::new("✅ 串口电机: 已连接").color(Color32::GREEN)
-                } else {
-                    RichText::new("❌ 串口电机: 未连接").color(Color32::LIGHT_RED)
-                };
-                ui.label(serial_status_text);
+        egui::TopBottomPanel::top("monitor_top_panel")
+            .frame(egui::Frame::none())
+            .show_inside(ui, |ui| {
+                ui.heading("监视与状态");
+                ui.separator();
+                ui.label(RichText::new("准备清单").strong());
+                ui.group(|ui| {
+                    ui.set_width(ui.available_width()); // 占满宽度
+                    let serial_status_text = if self.is_serial_connected {
+                        RichText::new("✅ 串口电机: 已连接").color(Color32::GREEN)
+                    } else {
+                        RichText::new("❌ 串口电机: 未连接").color(Color32::LIGHT_RED)
+                    };
+                    ui.label(serial_status_text);
 
-                let camera_status_text = if self.is_camera_connected {
-                    RichText::new("✅ 相机: 已连接").color(Color32::GREEN)
-                } else {
-                    RichText::new("❌ 相机: 未连接").color(Color32::LIGHT_RED)
-                };
-                ui.label(camera_status_text);
+                    let camera_status_text = if self.is_camera_connected {
+                        RichText::new("✅ 相机: 已连接").color(Color32::GREEN)
+                    } else {
+                        RichText::new("❌ 相机: 未连接").color(Color32::LIGHT_RED)
+                    };
+                    ui.label(camera_status_text);
 
-                let model_status_text = if self.is_model_ready {
-                    RichText::new("✅ 识别模型: 已就绪").color(Color32::GREEN)
-                } else {
-                    RichText::new("❌ 识别模型: 未就绪").color(Color32::LIGHT_RED)
-                };
-                ui.label(model_status_text);
+                    let model_status_text = if self.is_model_ready {
+                        RichText::new("✅ 识别模型: 已就绪").color(Color32::GREEN)
+                    } else {
+                        RichText::new("❌ 识别模型: 未就绪").color(Color32::LIGHT_RED)
+                    };
+                    ui.label(model_status_text);
+                });
+                ui.add_space(5.0);
             });
-            ui.add_space(5.0);
-        });
 
         // --- 3. 底部区域：圆圈设定和日志 (固定高度) ---
         // 注意：底部面板的控件需要按“从下到上”的顺序添加
-        egui::TopBottomPanel::bottom("monitor_bottom_panel").frame(egui::Frame::none()).show_inside(ui, |ui| {
-            // --- 日志 (最底部) ---
+        egui::TopBottomPanel::bottom("monitor_bottom_panel")
+            .frame(egui::Frame::none())
+            .show_inside(ui, |ui| {
+                // --- 日志 (最底部) ---
 
-            // --- 圆圈设定 (在日志上面) ---
-            ui.add_space(5.0);
-            ui.label(RichText::new("识别设定").strong());
-            ui.group(|ui| {
-                ui.set_width(ui.available_width()); // 占满宽度
-                if ui
-                    .checkbox(&mut self.camera_lock_circle, "锁定圆形位置")
-                    .changed()
-                {
-                    self.cmd_tx
-                        .send(Command::Camera(CameraCommand::SetLock(
-                            self.camera_lock_circle,
-                        )))
-                        .unwrap();
-                }
-                let min_radius_slider = ui.add(
-                    egui::Slider::new(&mut self.min_radius, 1..=self.max_radius).text("最小圆半径"),
-                );
-                let max_radius_slider = ui.add(
-                    egui::Slider::new(&mut self.max_radius, self.min_radius..=200)
-                        .text("最大圆半径"),
-                );
-                if min_radius_slider.changed() || max_radius_slider.changed() {
-                    self.cmd_tx
-                        .send(Command::Camera(CameraCommand::SetHoughCircleRadius {
-                            min: self.min_radius,
-                            max: self.max_radius,
-                        }))
-                        .unwrap();
-                }
+                // --- 圆圈设定 (在日志上面) ---
+                ui.add_space(5.0);
+                ui.label(RichText::new("识别设定").strong());
+                ui.group(|ui| {
+                    ui.set_width(ui.available_width()); // 占满宽度
+                    if ui
+                        .checkbox(&mut self.camera_lock_circle, "锁定圆形位置")
+                        .changed()
+                    {
+                        self.cmd_tx
+                            .send(Command::Camera(CameraCommand::SetLock(
+                                self.camera_lock_circle,
+                            )))
+                            .unwrap();
+                    }
+                    let min_radius_slider = ui.add(
+                        egui::Slider::new(&mut self.min_radius, 1..=self.max_radius)
+                            .text("最小圆半径"),
+                    );
+                    let max_radius_slider = ui.add(
+                        egui::Slider::new(&mut self.max_radius, self.min_radius..=200)
+                            .text("最大圆半径"),
+                    );
+                    if min_radius_slider.changed() || max_radius_slider.changed() {
+                        self.cmd_tx
+                            .send(Command::Camera(CameraCommand::SetHoughCircleRadius {
+                                min: self.min_radius,
+                                max: self.max_radius,
+                            }))
+                            .unwrap();
+                    }
+                });
+                ui.add_space(5.0);
+                ui.label(RichText::new("日志").strong());
+                Frame::group(ui.style()).show(ui, |ui| {
+                    ui.set_height(120.0); // 可以适当增加高度
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .stick_to_bottom(true) // 自动滚动到底部，显示最新日志
+                        .show(ui, |ui| {
+                            // 从后往前迭代，这样最新的日志显示在最下方
+                            // let log_text = self.log_buffer.iter().cloned().collect::<Vec<_>>().join("\n");
+                            // ui.label(RichText::new(log_text).monospace().size(12.0));
+                            for log in &self.log_buffer {
+                                draw_log_message(ui, log);
+                            }
+                        });
+                });
             });
-            ui.add_space(5.0);
-            ui.label(RichText::new("日志").strong());
-            Frame::group(ui.style()).show(ui, |ui|{
-        ui.set_height(120.0); // 可以适当增加高度
-        egui::ScrollArea::vertical()
-            .auto_shrink([false, false])
-            .stick_to_bottom(true) // 自动滚动到底部，显示最新日志
-            .show(ui, |ui| {
-                // 从后往前迭代，这样最新的日志显示在最下方
-                // let log_text = self.log_buffer.iter().cloned().collect::<Vec<_>>().join("\n");
-                // ui.label(RichText::new(log_text).monospace().size(12.0));
-                for log in &self.log_buffer {
-                    draw_log_message(ui,log); 
-                }
-            });
-    });
-        });
 
         // --- 2. 中间区域：相机画面 (自动填充所有剩余空间) ---
         egui::CentralPanel::default()
@@ -522,7 +528,7 @@ impl PolarimeterApp {
 
                     if self.camera_texture.is_some() && self.is_camera_connected {
                         let texture = self.camera_texture.as_ref().unwrap();
-                        
+
                         // let img = egui::Image::new(texture)
                         //     .maintain_aspect_ratio(true)
                         //     .max_size(ui.available_size()); // 图像大小适应可用空间
@@ -532,12 +538,14 @@ impl PolarimeterApp {
                         // 步骤 1: 初始化或重置视图矩形
                         // 如果 camera_view_rect 未初始化，则设置为覆盖整个图像 (UV坐标从[0,0]到[1,1])
                         if self.camera_view_rect.is_none() {
-                            self.camera_view_rect = Some(Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)));
+                            self.camera_view_rect =
+                                Some(Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)));
                         }
                         let mut view_rect = self.camera_view_rect.unwrap();
 
                         // 步骤 2: 分配UI空间并感知交互
-                        let response = ui.allocate_response(ui.available_size(), egui::Sense::drag());
+                        let response =
+                            ui.allocate_response(ui.available_size(), egui::Sense::drag());
                         let screen_rect = response.rect;
 
                         // 步骤 3: 处理滚轮缩放
@@ -557,21 +565,23 @@ impl PolarimeterApp {
                                     // a. 计算指针在UV坐标系中的绝对位置 (这部分是正确的)
                                     let pointer_offset_in_pixels = pointer_pos - screen_rect.min;
                                     let uv_per_pixel = view_rect.size() / screen_rect.size();
-                                    let pointer_offset_in_uv = pointer_offset_in_pixels * uv_per_pixel;
+                                    let pointer_offset_in_uv =
+                                        pointer_offset_in_pixels * uv_per_pixel;
                                     let pointer_in_uv = view_rect.min + pointer_offset_in_uv;
 
                                     // **【核心逻辑修正】**
                                     // b. 计算新的视图尺寸
                                     let new_size = view_rect.size() * zoom_factor;
-                                    
+
                                     // c. 计算从旧视图左上角到鼠标指针的向量，并按比例缩放
                                     let old_min_to_pointer_vec = pointer_in_uv - view_rect.min;
-                                    let new_min_to_pointer_vec = old_min_to_pointer_vec * zoom_factor;
-                                    
+                                    let new_min_to_pointer_vec =
+                                        old_min_to_pointer_vec * zoom_factor;
+
                                     // d. 新的左上角 = 鼠标指针位置 - 新的缩放后向量
                                     // 这确保了鼠标指针 `pointer_in_uv` 在缩放前后，其UV坐标不变
                                     let new_min = pointer_in_uv - new_min_to_pointer_vec;
-                                    
+
                                     // e. 使用新的左上角和尺寸创建视图矩形
                                     view_rect = Rect::from_min_size(new_min, new_size);
                                 }
@@ -583,7 +593,7 @@ impl PolarimeterApp {
                             let drag_delta_in_pixels = response.drag_delta();
                             let uv_per_pixel = view_rect.size() / screen_rect.size();
                             let drag_delta_in_uv = drag_delta_in_pixels * uv_per_pixel;
-                            
+
                             // **【修正】** 使用 .translated() 方法进行平移，兼容所有版本
                             // 注意拖动方向与平移方向相反，所以用负的 delta
                             view_rect = view_rect.translate(-drag_delta_in_uv);
@@ -597,13 +607,21 @@ impl PolarimeterApp {
                         new_size.x = new_size.x.max(min_zoom_level);
                         new_size.y = new_size.y.max(min_zoom_level);
                         view_rect = Rect::from_center_size(view_rect.center(), new_size);
-                        
+
                         let mut offset = Vec2::ZERO;
-                        if view_rect.min.x < 0.0 { offset.x = -view_rect.min.x; }
-                        if view_rect.min.y < 0.0 { offset.y = -view_rect.min.y; }
-                        if view_rect.max.x > 1.0 { offset.x = 1.0 - view_rect.max.x; }
-                        if view_rect.max.y > 1.0 { offset.y = 1.0 - view_rect.max.y; }
-                        
+                        if view_rect.min.x < 0.0 {
+                            offset.x = -view_rect.min.x;
+                        }
+                        if view_rect.min.y < 0.0 {
+                            offset.y = -view_rect.min.y;
+                        }
+                        if view_rect.max.x > 1.0 {
+                            offset.x = 1.0 - view_rect.max.x;
+                        }
+                        if view_rect.max.y > 1.0 {
+                            offset.y = 1.0 - view_rect.max.y;
+                        }
+
                         // **【修正】** 使用 .translated() 方法施加边界修正
                         view_rect = view_rect.translate(offset);
 
@@ -614,9 +632,8 @@ impl PolarimeterApp {
                             .uv(view_rect)
                             .max_size(screen_rect.size())
                             .maintain_aspect_ratio(true);
-                        
-                        ui.put(screen_rect, image);
 
+                        ui.put(screen_rect, image);
                     } else {
                         ui.centered_and_justified(|ui| {
                             ui.label("[无相机信号]");
@@ -646,7 +663,7 @@ impl PolarimeterApp {
         // 右侧面板用于绘图
         egui::SidePanel::right("data_processing_plot")
             .exact_width(panel_width) // 精确设置宽度为50%
-            .resizable(false)       // 禁用拖动
+            .resizable(false) // 禁用拖动
             .show(ctx, |ui| {
                 ui.heading("回归图");
                 self.ui_data_processing_plot(ui);
@@ -670,17 +687,23 @@ impl PolarimeterApp {
         egui::ScrollArea::vertical().show(ui, |ui| {
             // --- 串口连接 ---
             ui.add_space(5.0);
+
             ui.label(RichText::new("串口电机连接").strong());
             ui.horizontal(|ui| {
-                let selected_text = self.selected_serial_port.clone();
-                egui::ComboBox::from_id_source("serial_select")
-                    .selected_text(selected_text)
-                    .show_ui(ui, |ui| {
-                        for port in &self.serial_ports {
-                            ui.selectable_value(&mut self.selected_serial_port, port.clone(), port);
-                        }
-                    });
-
+                ui.add_enabled_ui(!self.is_serial_connected, |ui: &mut Ui| {
+                    let selected_text = self.selected_serial_port.clone();
+                    egui::ComboBox::from_id_source("serial_select")
+                        .selected_text(selected_text)
+                        .show_ui(ui, |ui| {
+                            for port in &self.serial_ports {
+                                ui.selectable_value(
+                                    &mut self.selected_serial_port,
+                                    port.clone(),
+                                    port,
+                                );
+                            }
+                        });
+                });
                 if ui.button("刷新").clicked() {
                     self.cmd_tx
                         .send(Command::Device(DeviceCommand::RefreshSerialPorts))
@@ -714,18 +737,20 @@ impl PolarimeterApp {
             // --- 相机连接 ---
             ui.label(RichText::new("相机连接").strong());
             ui.horizontal(|ui| {
-                let selected_text = self
-                    .camera_list
-                    .get(self.selected_camera_idx)
-                    .cloned()
-                    .unwrap_or_else(|| "N/A".to_string());
-                egui::ComboBox::from_id_source("camera_select")
-                    .selected_text(selected_text)
-                    .show_ui(ui, |ui| {
-                        for (i, cam) in self.camera_list.iter().enumerate() {
-                            ui.selectable_value(&mut self.selected_camera_idx, i, cam);
-                        }
-                    });
+                ui.add_enabled_ui(!self.is_camera_connected, |ui| {
+                    let selected_text = self
+                        .camera_list
+                        .get(self.selected_camera_idx)
+                        .cloned()
+                        .unwrap_or_else(|| "N/A".to_string());
+                    egui::ComboBox::from_id_source("camera_select")
+                        .selected_text(selected_text)
+                        .show_ui(ui, |ui| {
+                            for (i, cam) in self.camera_list.iter().enumerate() {
+                                ui.selectable_value(&mut self.selected_camera_idx, i, cam);
+                            }
+                        });
+                });
 
                 if ui.button("刷新").clicked() {
                     self.cmd_tx
@@ -772,90 +797,22 @@ impl PolarimeterApp {
                         .unwrap();
                 }
             });
-            ui.horizontal(|ui| {
-                ui.label("旋转方向:");
-                if ui
-                    .radio_value(&mut self.rotation_direction_reverse, false, "正")
-                    .changed()
-                    || ui
-                        .radio_value(&mut self.rotation_direction_reverse, true, "反")
-                        .changed()
-                {
-                    self.cmd_tx
-                        .send(Command::Device(DeviceCommand::SetRotationReverse(
-                            self.rotation_direction_reverse,
-                        )))
-                        .unwrap();
-                }
-            });
-            ui.add_space(10.0);
-
-            ui.label(RichText::new("手动控制").strong());
-            ui.add_enabled_ui(self.is_serial_connected, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("手动旋转");
-                    ui.add(
-                        egui::DragValue::new(&mut self.manual_rotation_angle)
-                            .speed(0.1)
-                            .suffix("°").clamp_range(-10.0..=10.0),
-                    );
-                    if ui.button("旋转").clicked() {
-                        self.cmd_tx
-                            .send(Command::Device(DeviceCommand::RotateMotor {
-                                steps: (self.manual_rotation_angle * 746.0).round() as i32,
-                            }))
-                            .unwrap();
-                        self.manual_rotation_angle = 0.0;
-                    }
-                });
-                ui.add_enabled_ui(self.current_angle.is_some(), |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("手动旋转至");
-                        ui.add(
-                            egui::DragValue::new(&mut self.manual_rotation_to_angle)
-                                .speed(0.1)
-                                .suffix("°"),
-                        );
-                        if ui.button("旋转").clicked() {
-                            self.cmd_tx
-                                .send(Command::Device(DeviceCommand::RotateTo {
-                                    steps: (self.manual_rotation_to_angle * 746.0).round() as i32,
-                                }))
-                                .unwrap();
-                            // self.manual_rotation_to_angle = 0.0;
-                        }
-                    });
-                });
-            });
-            ui.add_space(10.0);
-
-            ui.label(RichText::new("自动零点校准").strong());
-            ui.add_enabled_ui(
-                self.is_model_ready && self.is_camera_connected && self.is_serial_connected,
-                |ui| {
-                    if !self.is_static_running {
-                        // 借用 is_static_running 状态
-                        
-                        if ui.button("寻找旋光零点").clicked() {
-                            self.cmd_tx
-                                .send(Command::Device(DeviceCommand::FindZeroPoint))
-                                .unwrap();
-                        }
-                        ui.label("（请移出零点附近再点击寻找零点）");
-                    } else {
-                        if ui.button("停止寻找").clicked() {
-                            self.cmd_tx
-                                .send(Command::StaticMeasure(StaticMeasureCommand::Stop))
-                                .unwrap();
-                        }
-                    }
-                },
-            );
-            if let Some(ang) = self.current_angle {
-                ui.label(format!("当前角度: {:.2}°", ang));
-            } else {
-                ui.label("当前角度: 未知 (请先校准零点)");
-            }
+            // ui.horizontal(|ui| {
+            //     ui.label("旋转方向:");
+            //     if ui
+            //         .radio_value(&mut self.rotation_direction_reverse, false, "正")
+            //         .changed()
+            //         || ui
+            //             .radio_value(&mut self.rotation_direction_reverse, true, "反")
+            //             .changed()
+            //     {
+            //         self.cmd_tx
+            //             .send(Command::Device(DeviceCommand::SetRotationReverse(
+            //                 self.rotation_direction_reverse,
+            //             )))
+            //             .unwrap();
+            //     }
+            // });
         });
     }
 
@@ -863,24 +820,25 @@ impl PolarimeterApp {
         // 此函数内容基本与原 ui_model_training 一致
         ui.heading("分类模型训练");
         ui.label(RichText::new("手动控制").strong());
-            ui.add_enabled_ui(self.is_serial_connected, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("手动旋转");
-                    ui.add(
-                        egui::DragValue::new(&mut self.manual_rotation_angle)
-                            .speed(0.1)
-                            .suffix("°").clamp_range(-10.0..=10.0),
-                    );
-                    if ui.button("旋转").clicked() {
-                        self.cmd_tx
-                            .send(Command::Device(DeviceCommand::RotateMotor {
-                                steps: (self.manual_rotation_angle * 746.0).round() as i32,
-                            }))
-                            .unwrap();
-                        self.manual_rotation_angle = 0.0;
-                    }
-                });
+        ui.add_enabled_ui(self.is_serial_connected, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("手动旋转");
+                ui.add(
+                    egui::DragValue::new(&mut self.manual_rotation_angle)
+                        .speed(0.1)
+                        .suffix("°")
+                        .clamp_range(-10.0..=10.0),
+                );
+                if ui.button("旋转").clicked() {
+                    self.cmd_tx
+                        .send(Command::Device(DeviceCommand::RotateMotor {
+                            steps: (self.manual_rotation_angle * 746.0).round() as i32,
+                        }))
+                        .unwrap();
+                    self.manual_rotation_angle = 0.0;
+                }
             });
+        });
         ui.label(RichText::new("视频录制").strong());
 
         let device_ready = self.is_serial_connected && self.is_camera_connected;
@@ -905,19 +863,18 @@ impl PolarimeterApp {
                 });
                 ui.label("每次录制旋转：");
                 ui.add(
-                            egui::DragValue::new(&mut self.recording_angle)
-                                .speed(0.1)
-                                .suffix("°"),
+                    egui::DragValue::new(&mut self.recording_angle)
+                        .speed(0.1)
+                        .suffix("°"),
                 );
                 if !self.is_recording {
                     if ui.button("开始录制").clicked() {
-                        if let Some(path) = rfd::FileDialog::new().pick_folder()
-                        {
+                        if let Some(path) = rfd::FileDialog::new().pick_folder() {
                             self.cmd_tx
                                 .send(Command::Device(DeviceCommand::StartRecording {
                                     mode: self.recording_mode.clone(),
                                     save_path: path,
-                                    num: (self.recording_angle*746.0).round() as i32
+                                    num: (self.recording_angle * 746.0).round() as i32,
                                 }))
                                 .unwrap();
                         }
@@ -949,12 +906,17 @@ impl PolarimeterApp {
                 // 第一行: MAM 视频
                 ui.label("录制数据集:");
                 ui.horizontal(|ui| {
-                    ui.text_edit_singleline(&mut self.recorded_dataset_path);
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.set_max_width(150.0);
+                        let label = egui::Label::new(&self.recorded_dataset_path).truncate(true);
+                        // 当文本被截断时，鼠标悬浮会显示完整的文本
+                        ui.add(label);
+                    });
                     if ui.button("...").clicked() {
                         if let Some(path) = rfd::FileDialog::new().pick_folder() {
                             self.recorded_dataset_path = path.to_string_lossy().to_string();
                             self.cmd_tx
-                                .send(Command::Training(TrainingCommand::LoadRecordedDataset { 
+                                .send(Command::Training(TrainingCommand::LoadRecordedDataset {
                                     path: self.recorded_dataset_path.clone().into(),
                                 }))
                                 .unwrap();
@@ -962,11 +924,11 @@ impl PolarimeterApp {
                     }
                     if ui.button("重置").clicked() {
                         // if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                            self.recorded_dataset_path = "".to_string();
-                            self.mam_video_status="未导入".to_string();
-                            self.cmd_tx
-                                .send(Command::Training(TrainingCommand::ResetRecordedDataset))
-                                .unwrap();
+                        self.recorded_dataset_path = "".to_string();
+                        self.mam_video_status = "未导入".to_string();
+                        self.cmd_tx
+                            .send(Command::Training(TrainingCommand::ResetRecordedDataset))
+                            .unwrap();
                         // }
                     }
                 });
@@ -976,7 +938,12 @@ impl PolarimeterApp {
                 // 第三行: 常驻数据集
                 ui.label("常驻数据集:");
                 ui.horizontal(|ui| {
-                    ui.text_edit_singleline(&mut self.dataset_path);
+                    //  ui.label(&self.dataset_path).cl;
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.set_max_width(150.0);
+                        let label = egui::Label::new(&self.dataset_path).truncate(true);
+                        ui.add(label);
+                    });
                     if ui.button("...").clicked() {
                         if let Some(path) = rfd::FileDialog::new().pick_folder() {
                             self.dataset_path = path.to_string_lossy().to_string();
@@ -989,11 +956,11 @@ impl PolarimeterApp {
                     }
                     if ui.button("重置").clicked() {
                         // if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                            self.dataset_path = "".to_string();
-                            self.persistent_dataset_status="未导入".to_string();
-                            self.cmd_tx
-                                .send(Command::Training(TrainingCommand::ResetPersistentDataset))
-                                .unwrap();
+                        self.dataset_path = "".to_string();
+                        self.persistent_dataset_status = "未导入".to_string();
+                        self.cmd_tx
+                            .send(Command::Training(TrainingCommand::ResetPersistentDataset))
+                            .unwrap();
                         // }
                     }
                 });
@@ -1036,7 +1003,7 @@ impl PolarimeterApp {
         // --- 后续的训练、保存、加载等 UI 保持不变 ---
         ui.horizontal(|ui| {
             // ui.checkbox(&mut self.train_show_roc, "显示 ROC 曲线");
-            
+
             if ui.button("训练模型").clicked() {
                 self.cmd_tx
                     .send(Command::Training(TrainingCommand::TrainModel {
@@ -1046,7 +1013,7 @@ impl PolarimeterApp {
                     .unwrap();
             };
         });
-
+        
         // ui.label(format!("状态: {}", self.training_status));
         if let Some(cm) = &self.cm_data {
             ui.add_space(15.0);
@@ -1073,7 +1040,32 @@ impl PolarimeterApp {
                 ui.end_row();
             });
         }
-    
+        ui.separator();
+        ui.label(RichText::new("自动零点校准").strong());
+        ui.add_enabled_ui(
+            self.is_model_ready && self.is_camera_connected && self.is_serial_connected,
+            |ui| {
+                ui.horizontal(|ui| {
+                    if !self.is_static_running {
+                        // 借用 is_static_running 状态
+
+                        if ui.button("寻找旋光零点").clicked() {
+                            self.cmd_tx
+                                .send(Command::Device(DeviceCommand::FindZeroPoint))
+                                .unwrap();
+                        }
+                    } else {
+                        if ui.button("停止寻找").clicked() {
+                            self.cmd_tx
+                                .send(Command::StaticMeasure(StaticMeasureCommand::Stop))
+                                .unwrap();
+                        }
+                    }
+                    ui.label("（请移出零点附近再点击寻找零点）");
+                });
+            },
+        );
+
     }
 
     fn draw_static_measurement_tab(&mut self, ui: &mut Ui) {
@@ -1085,28 +1077,29 @@ impl PolarimeterApp {
         } else {
             ui.label(format!("没有有效零点"));
         }
+
         ui.separator();
         ui.label(RichText::new("手动控制").strong());
-            ui.add_enabled_ui(self.is_serial_connected, |ui| {
-                ui.add_enabled_ui(self.current_angle.is_some(), |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("手动旋转至");
-                        ui.add(
-                            egui::DragValue::new(&mut self.manual_rotation_to_angle)
-                                .speed(0.1)
-                                .suffix("°"),
-                        );
-                        if ui.button("旋转").clicked() {
-                            self.cmd_tx
-                                .send(Command::Device(DeviceCommand::RotateTo {
-                                    steps: (self.manual_rotation_to_angle * 746.0).round() as i32,
-                                }))
-                                .unwrap();
-                            // self.manual_rotation_to_angle = 0.0;
-                        }
-                    });
+        ui.add_enabled_ui(self.is_serial_connected, |ui| {
+            ui.add_enabled_ui(self.current_angle.is_some(), |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("手动旋转至");
+                    ui.add(
+                        egui::DragValue::new(&mut self.manual_rotation_to_angle)
+                            .speed(0.1)
+                            .suffix("°"),
+                    );
+                    if ui.button("旋转").clicked() {
+                        self.cmd_tx
+                            .send(Command::Device(DeviceCommand::RotateTo {
+                                steps: (self.manual_rotation_to_angle * 746.0).round() as i32,
+                            }))
+                            .unwrap();
+                        // self.manual_rotation_to_angle = 0.0;
+                    }
                 });
             });
+        });
         ui.separator();
         ui.label(RichText::new("静态测量设置").strong());
         let device_and_model_ready = self.is_camera_connected
@@ -1114,6 +1107,13 @@ impl PolarimeterApp {
             && self.is_model_ready
             && self.current_angle.is_some();
         ui.horizontal(|ui| {
+            ui.add_enabled_ui(!self.is_static_running, |ui| {
+                ui.add(
+                    egui::DragValue::new(&mut self.static_times)
+                        .speed(1)
+                        .clamp_range(1..=10),
+                );
+            });
             ui.add_enabled_ui(
                 device_and_model_ready && !self.is_dynamic_exp_running,
                 |ui| {
@@ -1121,7 +1121,9 @@ impl PolarimeterApp {
                         if ui.button("运行精细测量").clicked() {
                             self.cmd_tx
                                 .send(Command::StaticMeasure(
-                                    StaticMeasureCommand::RunSingleMeasurement,
+                                    StaticMeasureCommand::RunSingleMeasurement {
+                                        time: self.static_times,
+                                    },
                                 ))
                                 .unwrap();
                         }
@@ -1240,67 +1242,134 @@ impl PolarimeterApp {
         }
         ui.separator();
         ui.label(RichText::new("手动控制").strong());
-            ui.add_enabled_ui(self.is_serial_connected, |ui| {
-                ui.add_enabled_ui(self.current_angle.is_some(), |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("手动旋转至");
-                        ui.add(
-                            egui::DragValue::new(&mut self.manual_rotation_to_angle)
-                                .speed(0.1)
-                                .suffix("°"),
-                        );
-                        if ui.button("旋转").clicked() {
-                            self.cmd_tx
-                                .send(Command::Device(DeviceCommand::RotateTo {
-                                    steps: (self.manual_rotation_to_angle * 746.0).round() as i32,
-                                }))
-                                .unwrap();
-                            // self.manual_rotation_to_angle = 0.0;
-                        }
-                    });
+        ui.add_enabled_ui(self.is_serial_connected, |ui| {
+            ui.add_enabled_ui(self.current_angle.is_some(), |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("手动旋转至");
+                    ui.add(
+                        egui::DragValue::new(&mut self.manual_rotation_to_angle)
+                            .speed(0.1)
+                            .suffix("°"),
+                    );
+                    if ui.button("旋转").clicked() {
+                        self.cmd_tx
+                            .send(Command::Device(DeviceCommand::RotateTo {
+                                steps: (self.manual_rotation_to_angle * 746.0).round() as i32,
+                            }))
+                            .unwrap();
+                        // self.manual_rotation_to_angle = 0.0;
+                    }
                 });
             });
+        });
         ui.separator();
         ui.label(RichText::new("参数设置").strong());
-        ui.add_enabled_ui(!self.is_dynamic_exp_running, |ui| {
-            egui::Grid::new("dynamic_params")
-                .num_columns(4)
-                .spacing([20.0, 8.0])
-                .show(ui, |ui| {
-                    ui.label("姓名:");
-                    ui.text_edit_singleline(&mut self.dynamic_params.student_name);
-                    ui.label("学号:");
-                    ui.text_edit_singleline(&mut self.dynamic_params.student_id);
-                    ui.end_row();
-                    ui.label("实验温度 (°C):");
-                    ui.add(egui::DragValue::new(&mut self.dynamic_params.temperature));
-                    ui.label("蔗糖浓度 (g/mL):");
-                    ui.add(egui::DragValue::new(&mut self.dynamic_params.sucrose_conc));
-                    ui.end_row();
-                    ui.label("盐酸浓度 (mol/L):");
-                    ui.add(egui::DragValue::new(&mut self.dynamic_params.hcl_conc));
-                    ui.end_row();
-                });
+        ui.add_enabled_ui(true, |ui| {
+            ui.horizontal(|ui| {
+                // ui.label("姓名:");
+                // ui.text_edit_singleline(&mut self.dynamic_params.student_name);
+                // ui.label("学号:");
+                // ui.text_edit_singleline(&mut self.dynamic_params.student_id);
+                // ui.end_row();
+                ui.label("实验温度 (°C):");
+                if (ui
+                    .add(egui::DragValue::new(&mut self.dynamic_params.temperature))
+                    .changed())
+                {
+                    self.cmd_tx
+                        .send(Command::DynamicMeasure(
+                            DynamicMeasureCommand::UpdateParams {
+                                params: self.dynamic_params.clone(),
+                            },
+                        ))
+                        .unwrap();
+                }
+                ui.label("蔗糖浓度 (g/mL):");
+                if (ui
+                    .add(egui::DragValue::new(&mut self.dynamic_params.sucrose_conc))
+                    .changed())
+                {
+                    self.cmd_tx
+                        .send(Command::DynamicMeasure(
+                            DynamicMeasureCommand::UpdateParams {
+                                params: self.dynamic_params.clone(),
+                            },
+                        ))
+                        .unwrap();
+                }
+                ui.end_row();
+                ui.label("盐酸浓度 (mol/L):");
+                ui.add(egui::DragValue::new(&mut self.dynamic_params.hcl_conc));
+            });
             ui.separator();
             ui.horizontal(|ui| {
                 ui.label("步进角度(°):");
-                ui.add(egui::DragValue::new(&mut self.dynamic_params.step_angle));
+                if (ui
+                    .add(egui::DragValue::new(&mut self.dynamic_params.step_angle))
+                    .changed())
+                {
+                    self.cmd_tx
+                        .send(Command::DynamicMeasure(
+                            DynamicMeasureCommand::UpdateParams {
+                                params: self.dynamic_params.clone(),
+                            },
+                        ))
+                        .unwrap();
+                }
                 ui.label("采样点数目:");
-                ui.add(egui::DragValue::new(&mut self.dynamic_params.sample_points));
+                if (ui
+                    .add(egui::DragValue::new(&mut self.dynamic_params.sample_points))
+                    .changed())
+                {
+                    self.cmd_tx
+                        .send(Command::DynamicMeasure(
+                            DynamicMeasureCommand::UpdateParams {
+                                params: self.dynamic_params.clone(),
+                            },
+                        ))
+                        .unwrap();
+                };
             })
         });
 
         ui.separator();
         ui.label(RichText::new("动态测量控制").strong());
         ui.horizontal(|ui| {
-            if ui
-                .add_enabled(!self.is_dynamic_exp_running, egui::Button::new("开始计时"))
-                .clicked()
-            {
-                self.cmd_tx
-                    .send(Command::DynamicMeasure(DynamicMeasureCommand::StartNew))
-                    .unwrap();
-            }
+            ui.add_enabled_ui(
+                self.is_camera_connected
+                    && self.is_serial_connected
+                    && self.is_model_ready
+                    && !self.is_static_running
+                    && self.current_angle.is_some() ,| ui | {
+                        if !self.start_time.is_some(){
+                            if ui.button("开始计时").clicked() {
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("Excel", &["xlsx"])
+                                .save_file()
+                            {
+                                self.dynamic_params.path = path;
+                                self.cmd_tx
+                                    .send(Command::DynamicMeasure(
+                                        DynamicMeasureCommand::UpdateParams {
+                                            params: self.dynamic_params.clone(),
+                                        },
+                                    ))
+                                    .unwrap();
+                                self.cmd_tx
+                                    .send(Command::DynamicMeasure(DynamicMeasureCommand::StartNew))
+                                    .unwrap();
+                            }
+                        }
+                        }else{
+                            if ui.button("停止计时").clicked() {
+                            
+                                self.start_time=None;
+                                self.cmd_tx
+                                .send(Command::DynamicMeasure(DynamicMeasureCommand::Stop))
+                                .unwrap();
+                            }
+                        }
+                    });
             ui.add_enabled_ui(
                 self.is_camera_connected
                     && self.is_serial_connected
@@ -1314,9 +1383,14 @@ impl PolarimeterApp {
                             // self.is_dynamic_exp_running = true;
                             // self.dynamic_results.clear();
                             self.cmd_tx
-                                .send(Command::DynamicMeasure(DynamicMeasureCommand::Start {
-                                    params: self.dynamic_params.clone(),
-                                }))
+                                .send(Command::DynamicMeasure(
+                                    DynamicMeasureCommand::UpdateParams {
+                                        params: self.dynamic_params.clone(),
+                                    },
+                                ))
+                                .unwrap();
+                            self.cmd_tx
+                                .send(Command::DynamicMeasure(DynamicMeasureCommand::Start))
                                 .unwrap();
                         }
                     } else {
@@ -1340,18 +1414,21 @@ impl PolarimeterApp {
         ui.separator();
         ui.label(RichText::new("测量结果").strong());
         ui.horizontal(|ui| {
-            if ui.button("保存结果").clicked() {
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("Excel", &["xlsx"])
-                    .save_file()
-                {
-                    self.cmd_tx
-                        .send(Command::DynamicMeasure(
-                            DynamicMeasureCommand::SaveResults { path ,params:self.dynamic_params.clone()},
-                        ))
-                        .unwrap();
-                }
-            }
+            // if ui.button("保存结果").clicked() {
+            //     if let Some(path) = rfd::FileDialog::new()
+            //         .add_filter("Excel", &["xlsx"])
+            //         .save_file()
+            //     {
+            //         self.cmd_tx
+            //             .send(Command::DynamicMeasure(
+            //                 DynamicMeasureCommand::SaveResults {
+            //                     path,
+            //                     params: self.dynamic_params.clone(),
+            //                 },
+            //             ))
+            //             .unwrap();
+            //     }
+            // }
             if ui.button("清除结果").clicked() {
                 self.cmd_tx
                     .send(Command::DynamicMeasure(DynamicMeasureCommand::ClearResults))
@@ -1620,41 +1697,39 @@ impl PolarimeterApp {
 fn draw_log_message(ui: &mut Ui, log: &LogMessage) {
     let (level_str, color) = level_to_style(log.level);
 
-    let layout_response = ui.horizontal_wrapped(|ui| {
-        // 让 UI 元素更紧凑一些
-        ui.style_mut().spacing.item_spacing.x = 4.0;
+    let layout_response = ui
+        .horizontal_wrapped(|ui| {
+            // 让 UI 元素更紧凑一些
+            ui.style_mut().spacing.item_spacing.x = 4.0;
 
-        // 1. (可选) 显示时间戳
+            // 1. (可选) 显示时间戳
 
-        // 2. 【新增】显示日志来源 (target)
-        // 我们给它一个柔和的、不同于其他元素的颜色，比如青色或灰色
+            // 2. 【新增】显示日志来源 (target)
+            // 我们给它一个柔和的、不同于其他元素的颜色，比如青色或灰色
 
-        // 3. 显示日志级别
-        ui.label(
-            RichText::new(format!("[{}]", level_str))
-                .color(color)
-                .monospace()
-        );
+            // 3. 显示日志级别
+            ui.label(
+                RichText::new(format!("[{}]", level_str))
+                    .color(color)
+                    .monospace(),
+            );
 
-        // 4. 显示日志消息
-        ui.label(
-            RichText::new(&log.message)
-                .monospace()
-        );
-                ui.label(
-            RichText::new(format!("({})",&log.target))
-                .color(Color32::from_rgb(100, 160, 180)) // 柔和的青色
-                .monospace()
-        );
-    }).response;
+            // 4. 显示日志消息
+            ui.label(RichText::new(&log.message).monospace());
+            ui.label(
+                RichText::new(format!("({})", &log.target))
+                    .color(Color32::from_rgb(100, 160, 180)) // 柔和的青色
+                    .monospace(),
+            );
+        })
+        .response;
 
     // 悬停文本依然显示完整的 UTC 时间
-    layout_response.on_hover_text(
-        format!("Timestamp: {}\nTarget: {}", 
-            log.timestamp.format("%Y-%m-%d %H:%M:%S %Z").to_string(),
-            log.target
-        )
-    );
+    layout_response.on_hover_text(format!(
+        "Timestamp: {}\nTarget: {}",
+        log.timestamp.format("%Y-%m-%d %H:%M:%S %Z").to_string(),
+        log.target
+    ));
 }
 
 // level_to_style 函数保持不变

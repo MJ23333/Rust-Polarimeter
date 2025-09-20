@@ -119,7 +119,7 @@ pub fn handle_device(
             }
         }
         DeviceCommand::FindZeroPoint => {
-            super::measurement::static_measurement(&state, &tx, token, true)?;
+            super::measurement::static_measurement(&state, &tx, token, true,1)?;
         }
         DeviceCommand::ReturnToZero => {
             // send_status(&tx, "正在返回零点...")?;
@@ -233,8 +233,8 @@ pub fn handle_static_measure(
     token: CancellationToken,
 ) -> Result<()> {
     match cmd {
-        StaticMeasureCommand::RunSingleMeasurement => {
-            if super::measurement::static_measurement(&state, &tx, token, false).is_err() {
+        StaticMeasureCommand::RunSingleMeasurement{time} => {
+            if super::measurement::static_measurement(&state, &tx, token, false,time).is_err() {
                 state.lock().measurement.static_task_token = None;
                 tx.send(Update::Measurement(MeasurementUpdate::StaticRunning(false)))?;
             }
@@ -270,11 +270,14 @@ pub fn handle_dynamic_measure(
     token: CancellationToken,
 ) -> Result<()> {
     match cmd {
-        DynamicMeasureCommand::Start { params } => {
+        DynamicMeasureCommand::Start  => {
             // let token = Arc::new(AtomicBool::new(false));
             // state.lock().measurement.dynamic_task_token = Some(token.clone());
             // 这个函数是阻塞的，但它运行在自己的线程里
-            super::measurement::run_dynamic_experiment_loop(&state, params, &tx, token)?;
+            super::measurement::run_dynamic_experiment_loop(&state, &tx, token)?;
+        }
+        DynamicMeasureCommand::UpdateParams { params }=>{
+            state.lock().measurement.dynamic_params=params;
         }
         DynamicMeasureCommand::Stop => {
             send_status(&tx, "正在停止动态实验...")?;
@@ -316,9 +319,6 @@ pub fn handle_dynamic_measure(
             tx.send(Update::Measurement(MeasurementUpdate::DynamicStatus(
                 format!("结果已经清除"),
             )))?;
-        }
-        DynamicMeasureCommand::SaveResults { path, params } => {
-            super::measurement::save_dynamic_results(&state, path, tx, params)?;
         }
     }
     Ok(())

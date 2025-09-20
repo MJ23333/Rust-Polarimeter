@@ -68,7 +68,7 @@ pub enum TrainingCommand {
 
 #[derive(Debug, Clone)]
 pub enum StaticMeasureCommand {
-    RunSingleMeasurement,
+    RunSingleMeasurement{time: i32},
     SaveResults { path: PathBuf },
     ClearResults,
     Stop,
@@ -76,10 +76,10 @@ pub enum StaticMeasureCommand {
 
 #[derive(Debug, Clone)]
 pub enum DynamicMeasureCommand {
-    Start { params: DynamicExpParams},
+    Start,
+    UpdateParams{params:DynamicExpParams},
     Stop,
     StartNew,
-    SaveResults { path: PathBuf ,params: DynamicExpParams},
     ClearResults,
 }
 
@@ -189,8 +189,7 @@ pub enum RegressionMode { Linear, Log, Inverse }
 
 #[derive(Debug, Clone)]
 pub struct DynamicExpParams {
-    pub student_name: String,
-    pub student_id: String,
+    pub path: PathBuf,
     pub temperature: f32,
     pub sucrose_conc: f32,
     pub hcl_conc: f32,
