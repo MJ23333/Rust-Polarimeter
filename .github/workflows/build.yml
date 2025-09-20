@@ -28,9 +28,17 @@ jobs:
           echo "OPENCV_INCLUDE_PATHS=C:\tools\opencv\build\include" >> $env:GITHUB_ENV
 
           # Discover the lib path (robustly finds the vc* folder)
-          echo "OPENCV_LINK_PATHS=C:\tools\opencv\build\x64\vc17\lib" >> $env:GITHUB_ENV
+
+          $LibPath = "C:\tools\opencv\build\x64\vc17\lib"
+          echo "OPENCV_LINK_PATHS=$LibPath" >> $env:GITHUB_ENV
           
-          echo "OPENCV_LINK_LIBS=opencv_world4110" >> $env:GITHUB_ENV
+          # Discover all library names in that path
+          $LibNames = (Get-ChildItem $LibPath -Filter *.lib).Name -replace '\.lib$' -join ','
+          if (-not $LibNames) {
+            Write-Error "Could not find any .lib files in $LibPath"
+            exit 1
+          }
+          echo "OPENCV_LINK_LIBS=$LibNames" >> $env:GITHUB_ENV
          
       shell: pwsh
      # echo "OPENCV_INCLUDE_PATHS=C:\tools\opencv\build\include" >> $env:GITHUB_ENV
@@ -45,12 +53,12 @@ jobs:
         toolchain: ${{ matrix.rust }}
 
     # 新增步骤: 安装 cargo-bundle
-    - name: Install cargo-bundle
-      run: cargo install cargo-bundle
+    # - name: Install cargo-bundle
+    #   run: cargo install cargo-bundle
 
     # 修改步骤: 使用 cargo bundle 而不是 cargo build
     - name: Bundle the release executable
-      run: cargo bundle --release
+      run: cargo build --release
 
     # 修改步骤: 上传打包好的产物
     - name: Upload Artifact (zip)
