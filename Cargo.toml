@@ -1,0 +1,44 @@
+[package]
+name = "rust_polarimeter_gui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = "0.27.2" # egui 的原生后端
+egui = "0.27.2"
+egui_plot = "0.27.2"
+egui_extras = { version = "0.27.2", features = ["image"] }
+crossbeam-channel = "0.5.12" # 高效的线程间通信通道
+image = "0.25.1" # 用于图像格式转换
+rfd = "0.14.1" # Rust File Dialogs，用于打开文件/文件夹对话框
+tracing = "0.1.40" # 日志库
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+egui-chinese-font = "0.1"
+serialport = "4.3.0" 
+
+# --- 新增的相机功能依赖 ---
+opencv = "0.95.1" # 核心 OpenCV 绑定
+chrono = { version = "0.4", features = ["serde"] } # serde feature is optional
+parking_lot = "0.12.1" # 高性能的 Mutex
+rand = { version = "0.8", features = ["small_rng"] }
+linfa = "0.7.0"
+linfa-logistic = "0.7.0"
+linfa-preprocessing = "0.7.0"
+rust_xlsxwriter = "0.90.0"
+linfa-linear = "0.7" 
+ndarray = { version = "0.15.6", features = ["serde"] }
+bincode = "1.3.3"
+serde = { version = "1.0", features = ["derive"] }
+calamine = "0.30.1" 
+anyhow="1.0.99"
+thiserror = "2.0.16"
+[profile.dev]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+
+[package.metadata.bundle]
+name = "Polarimeter"
+identifier = "com.ccme.polarimeter"
+icon = ["icons/ccme.ico"]

@@ -1,0 +1,41 @@
+name: Build Windows Executable
+
+on:
+  push:
+    branches: [ "main" ] # 当主分支有更新时触发
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  build-windows:
+    runs-on: windows-latest # 使用最新的 Windows 环境
+    strategy:
+      matrix:
+        rust: [stable]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4 # 检出你的代码
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ matrix.rust }}
+
+    - name: Install Chocolatey (Windows package manager)
+      run: |
+        Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+    - name: Install OpenCV via Chocolatey
+      # 这会自动下载预编译好的 OpenCV 库并设置好环境变量
+      run: choco install opencv --version=4.5.5 -y
+
+    - name: Build the release executable
+      # Cargo 会在 Windows 环境下找到 OpenCV 并编译
+      run: cargo build --release
+
+    - name: Upload Artifact
+      # 将编译好的 exe 文件打包上传，以便你下载
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-executable
+        path: target/release/rust_polarimeter_gui.exe # <-- 把 "你的程序名" 替换成你的程序名
