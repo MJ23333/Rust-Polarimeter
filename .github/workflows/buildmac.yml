@@ -37,22 +37,17 @@ jobs:
     - name: Archive the Application
       id: archive_app
       run: |
-        # 从打包脚本中获取 APP_NAME，或者在这里硬编码
-        # 为了稳妥，我们直接在这里定义，请确保它和你的脚本里的一致
         APP_NAME="Polarimeter"
         
-        # .app 文件本质上是一个文件夹，上传前必须将其压缩成 .zip
-        # 我们同样加上版本号，方便追踪
         ARTIFACT_NAME="${APP_NAME}-macos-v${{ github.run_number }}.zip"
         
         echo "Archiving $APP_NAME.app to $ARTIFACT_NAME..."
         cd target/release/bundle/osx/
-        zip -r "../../${ARTIFACT_NAME}" "${APP_NAME}.app"
-        cd ../../../.. # 返回项目根目录
+        zip -r "../../../${ARTIFACT_NAME}" "${APP_NAME}.app"
+        cd ../../../..
 
-        # 将最终的压缩包名设置为一个输出变量
-        echo "artifact_name=$ARTIFACT_NAME" >> $env:GITHUB_OUTPUT
-      shell: pwsh # 在 macOS runner 上也可以使用 PowerShell 来统一脚本语言
+        echo "artifact_name=${ARTIFACT_NAME}" >> $GITHUB_OUTPUT
+      # shell: pwsh # 在 macOS runner 上也可以使用 PowerShell 来统一脚本语言
 
     - name: Upload Artifact (zip)
       uses: actions/upload-artifact@v4
