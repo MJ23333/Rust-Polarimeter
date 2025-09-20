@@ -163,7 +163,7 @@ impl eframe::App for PolarimeterApp {
             if self.active_tab == Tab::DataProcessing {
                 // “数据处理”页的特殊布局
                 egui::SidePanel::right("data_processing_plot")
-                    .resizable(false) // 禁用拖动
+                    .resizable(true) // 禁用拖动
                     .default_width(panel_width)
                     .show(ctx, |ui| {
                         self.ui_data_processing_plot(ui);
@@ -180,7 +180,7 @@ impl eframe::App for PolarimeterApp {
                 // 标准布局
                 egui::SidePanel::right("monitor_panel")
                     // .exact_width(panel_width) // 精确设置宽度为50%
-                    .resizable(false) // 禁用拖动
+                    .resizable(true) // 禁用拖动
                     .default_width(panel_width)
                     .show(ctx, |ui| {
                         self.draw_monitor_panel(ui);
