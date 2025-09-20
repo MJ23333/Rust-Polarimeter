@@ -80,8 +80,8 @@ jobs:
         $PKG_DIR = "release_package"
         New-Item -ItemType Directory -Force -Path $PKG_DIR
 
-        Write-Output "Copying executable..."
-        Copy-Item -Path "target/release/rust_polarimeter_gui.exe" -Destination $PKG_DIR
+        # Write-Output "Copying executable..."
+        # Copy-Item -Path "target/release/rust_polarimeter_gui.exe" -Destination $PKG_DIR
 
         # ======================================================================
         # vvvvvvvvvvvvvv     模糊查找 DLL 的核心改进     vvvvvvvvvvvvvvvv
@@ -89,7 +89,7 @@ jobs:
         Write-Output "Copying OpenCV DLLs using wildcards..."
         $OpenCVBinDir = (Get-ChildItem "C:\tools\opencv\build\x64" -Directory | Where-Object { $_.Name -like 'vc*' } | Select-Object -First 1).FullName + "\bin"
 
-        $ReleaseDll = Get-ChildItem -Path $OpenCVBinDir -Filter "opencv_world*[!d].dll" | Select-Object -First 1
+        $ReleaseDll = Get-ChildItem -Path $OpenCVBinDir -Filter "opencv_world*.dll" | Where-Object { $_.Name -notlike "*d.dll" } | Select-Object -First 1
         if ($ReleaseDll) {
             Write-Output "Found and copying Release DLL: $($ReleaseDll.Name)"
             Copy-Item -Path $ReleaseDll.FullName -Destination $PKG_DIR
