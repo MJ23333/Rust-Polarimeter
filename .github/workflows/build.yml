@@ -68,9 +68,60 @@ jobs:
     - name: Bundle the release executable
       run: cargo build --release
 
-    # 修改步骤: 上传打包好的产物
+    # # 修改步骤: 上传打包好的产物
+    # - name: Upload Artifact (zip)
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: windows-executable
+    #     path: target/release/rust_polarimeter_gui.exe
+    - name: Create Distribution Package
+      id: create_package
+      run: |
+        $PKG_DIR = "release_package"
+        New-Item -ItemType Directory -Force -Path $PKG_DIR
+
+        Write-Output "Copying executable..."
+        Copy-Item -Path "target/release/rust_polarimeter_gui.exe" -Destination $PKG_DIR
+
+        # ======================================================================
+        # vvvvvvvvvvvvvv     模糊查找 DLL 的核心改进     vvvvvvvvvvvvvvvv
+        # ======================================================================
+        Write-Output "Copying OpenCV DLLs using wildcards..."
+        $OpenCVBinDir = (Get-ChildItem "C:\tools\opencv\build\x64" -Directory | Where-Object { $_.Name -like 'vc*' } | Select-Object -First 1).FullName + "\bin"
+
+        # 使用通配符 '*' 查找 release 版的 world DLL
+        # `Get-ChildItem` 会返回一个文件对象列表，我们取第一个
+        $ReleaseDll = Get-ChildItem -Path $OpenCVBinDir -Filter "opencv_world*[!d].dll" | Select-Object -First 1
+        if ($ReleaseDll) {
+            Write-Output "Found Release DLL: $($ReleaseDll.Name)"
+            Copy-Item -Path $ReleaseDll.FullName -Destination $PKG_DIR
+        } else {
+            Write-Warning "Warning: Could not find the release OpenCV world DLL."
+        }
+
+        # 使用通配符 '*' 查找 debug 版的 world DLL (以 'd.dll' 结尾)
+        $DebugDll = Get-ChildItem -Path $OpenCVBinDir -Filter "opencv_world*d.dll" | Select-Object -First 1
+        if ($DebugDll) {
+            Write-Output "Found Debug DLL: $($DebugDll.Name)"
+            Copy-Item -Path $DebugDll.FullName -Destination $PKG_DIR
+        } else {
+            Write-Warning "Warning: Could not find the debug OpenCV world DLL."
+        }
+        # ======================================================================
+        # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        # ======================================================================
+
+        Write-Output "Copying Microsoft VC++ Runtime DLLs..."
+        Copy-Item -Path "$env:VCToolsRedistDir\x64\Microsoft.VC143.CRT\*.dll" -Destination $PKG_DIR
+
+        $ARTIFACT_NAME = "polarimeter-windows-v${{ github.run_number }}.zip"
+        Compress-Archive -Path "$PKG_DIR\*" -DestinationPath $ARTIFACT_NAME
+        
+        echo "artifact_name=$ARTIFACT_NAME" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+
     - name: Upload Artifact (zip)
       uses: actions/upload-artifact@v4
       with:
-        name: windows-executable
-        path: target/release/rust_polarimeter_gui.exe
+        name: polarimeter-windows-package
+        path: ${{ steps.create_package.outputs.artifact_name }}

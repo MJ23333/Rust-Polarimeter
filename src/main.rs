@@ -21,13 +21,13 @@ fn setup_chinese_fonts(ctx: &Context) -> Result<()> {
     let mut fonts = FontDefinitions::default();
     
     // Try to load Chinese fonts based on platform
-    let chinese_font_data = load_chinese_font()?;
+    // let chinese_font_data = load_chinese_font()?;
     
     // Insert the Chinese font
     fonts.font_data.insert(
-        "chinese".to_owned(),
-        chinese_font_data,
-    );
+            "chinese".to_owned(),
+            egui::FontData::from_static(include_bytes!("../SourceHanSansSC-Regular.otf")),
+        );
     
     // Configure font families
     fonts.families.entry(FontFamily::Proportional).or_default()
@@ -40,102 +40,102 @@ fn setup_chinese_fonts(ctx: &Context) -> Result<()> {
     
     Ok(())
 }
-fn load_chinese_font() -> Result<FontData> {
-    #[cfg(target_os = "windows")]
-    {
-        load_windows_chinese_font()
-    }
+// fn load_chinese_font() -> Result<FontData> {
+//     #[cfg(target_os = "windows")]
+//     {
+//         load_windows_chinese_font()
+//     }
     
-    #[cfg(target_os = "macos")]
-    {
-        load_macos_chinese_font()
-    }
+//     #[cfg(target_os = "macos")]
+//     {
+//         load_macos_chinese_font()
+//     }
     
-    #[cfg(target_os = "linux")]
-    {
-        load_linux_chinese_font()
-    }
+//     #[cfg(target_os = "linux")]
+//     {
+//         load_linux_chinese_font()
+//     }
     
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    {
-        Err(FontError::UnsupportedPlatform)
-    }
-}
+//     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+//     {
+//         Err(FontError::UnsupportedPlatform)
+//     }
+// }
 
-#[cfg(target_os = "windows")]
-fn load_windows_chinese_font() -> Result<FontData> {
-    // List of common Chinese font paths on Windows
-    let font_paths = [
-        r"C:\Windows\Fonts\msyh.ttc",      // Microsoft YaHei
-        r"C:\Windows\Fonts\msyhbd.ttc",    // Microsoft YaHei Bold
-        r"C:\Windows\Fonts\simsun.ttc",    // SimSun
-        r"C:\Windows\Fonts\simhei.ttf",    // SimHei
-        r"C:\Windows\Fonts\simkai.ttf",    // KaiTi
-        r"C:\Windows\Fonts\simfang.ttf",   // FangSong
-        r"C:\Windows\Fonts\msjh.ttc",      // Microsoft JhengHei (Traditional Chinese)
-        r"C:\Windows\Fonts\msjhbd.ttc",    // Microsoft JhengHei Bold
-        r"C:\Windows\Fonts\kaiu.ttf",      // DFKai-SB (Traditional Chinese)
-        r"C:\Windows\Fonts\mingliu.ttc",   // MingLiU (Traditional Chinese)
-    ];
+// #[cfg(target_os = "windows")]
+// fn load_windows_chinese_font() -> Result<FontData> {
+//     // List of common Chinese font paths on Windows
+//     let font_paths = [
+//         r"C:\Windows\Fonts\msyh.ttc",      // Microsoft YaHei
+//         r"C:\Windows\Fonts\msyhbd.ttc",    // Microsoft YaHei Bold
+//         r"C:\Windows\Fonts\simsun.ttc",    // SimSun
+//         r"C:\Windows\Fonts\simhei.ttf",    // SimHei
+//         r"C:\Windows\Fonts\simkai.ttf",    // KaiTi
+//         r"C:\Windows\Fonts\simfang.ttf",   // FangSong
+//         r"C:\Windows\Fonts\msjh.ttc",      // Microsoft JhengHei (Traditional Chinese)
+//         r"C:\Windows\Fonts\msjhbd.ttc",    // Microsoft JhengHei Bold
+//         r"C:\Windows\Fonts\kaiu.ttf",      // DFKai-SB (Traditional Chinese)
+//         r"C:\Windows\Fonts\mingliu.ttc",   // MingLiU (Traditional Chinese)
+//     ];
     
-    for font_path in &font_paths {
-        if let Ok(font_data) = std::fs::read(font_path) {
-            return Ok(FontData::from_owned(font_data));
-        }
-    }
+//     for font_path in &font_paths {
+//         if let Ok(font_data) = std::fs::read(font_path) {
+//             return Ok(FontData::from_owned(font_data));
+//         }
+//     }
     
-    Err(anyhow::anyhow!("你连中文字体都没有？"))
-}
+//     Err(anyhow::anyhow!("你连中文字体都没有？"))
+// }
 
-#[cfg(target_os = "macos")]
-fn load_macos_chinese_font() -> Result<FontData> {
-    let font_paths = [
-        "SourceHanSansSC-Regular.otf",
-        "/System/Library/Fonts/PingFang.ttc",           // PingFang SC
-        "/System/Library/Fonts/STHeiti Light.ttc",      // STHeiti
-        "/System/Library/Fonts/STHeiti Medium.ttc",
-        "/System/Library/Fonts/Hiragino Sans GB.ttc",   // Hiragino Sans GB
-        "/Library/Fonts/Arial Unicode.ttf",             // Arial Unicode MS
-        "/System/Library/Fonts/Apple LiGothic Medium.ttf", // Apple LiGothic (Traditional)
-    ];
+// #[cfg(target_os = "macos")]
+// fn load_macos_chinese_font() -> Result<FontData> {
+//     let font_paths = [
+//         "SourceHanSansSC-Regular.otf",
+//         "/System/Library/Fonts/PingFang.ttc",           // PingFang SC
+//         "/System/Library/Fonts/STHeiti Light.ttc",      // STHeiti
+//         "/System/Library/Fonts/STHeiti Medium.ttc",
+//         "/System/Library/Fonts/Hiragino Sans GB.ttc",   // Hiragino Sans GB
+//         "/Library/Fonts/Arial Unicode.ttf",             // Arial Unicode MS
+//         "/System/Library/Fonts/Apple LiGothic Medium.ttf", // Apple LiGothic (Traditional)
+//     ];
     
-    for font_path in &font_paths {
-        if let Ok(font_data) = std::fs::read(font_path) {
-            tracing::info!("使用字体：{}",font_path);
-            return Ok(FontData::from_owned(font_data));
-        }
-    }
+//     for font_path in &font_paths {
+//         if let Ok(font_data) = std::fs::read(font_path) {
+//             tracing::info!("使用字体：{}",font_path);
+//             return Ok(FontData::from_owned(font_data));
+//         }
+//     }
     
-    Err(anyhow::anyhow!("你连中文字体都没有？"))
-}
+//     Err(anyhow::anyhow!("你连中文字体都没有？"))
+// }
 
-#[cfg(target_os = "linux")]
-fn load_linux_chinese_font() -> Result<FontData, FontError> {
-    // Common Chinese font paths on Linux distributions
-    let font_paths = [
-        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
-        "/usr/share/fonts/truetype/arphic/uming.ttc",
-        "/usr/share/fonts/truetype/arphic/ukai.ttc",
-        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        // Ubuntu/Debian paths
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        // CentOS/RHEL paths
-        "/usr/share/fonts/google-droid/DroidSansFallbackFull.ttf",
-        // Arch Linux paths
-        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-    ];
+// #[cfg(target_os = "linux")]
+// fn load_linux_chinese_font() -> Result<FontData, FontError> {
+//     // Common Chinese font paths on Linux distributions
+//     let font_paths = [
+//         "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+//         "/usr/share/fonts/truetype/arphic/uming.ttc",
+//         "/usr/share/fonts/truetype/arphic/ukai.ttc",
+//         "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+//         "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+//         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+//         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+//         // Ubuntu/Debian paths
+//         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+//         // CentOS/RHEL paths
+//         "/usr/share/fonts/google-droid/DroidSansFallbackFull.ttf",
+//         // Arch Linux paths
+//         "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+//     ];
     
-    for font_path in &font_paths {
-        if let Ok(font_data) = std::fs::read(font_path) {
-            return Ok(FontData::from_owned(font_data));
-        }
-    }
+//     for font_path in &font_paths {
+//         if let Ok(font_data) = std::fs::read(font_path) {
+//             return Ok(FontData::from_owned(font_data));
+//         }
+//     }
     
-    Err(anyhow::anyhow!("你连中文字体都没有？"))
-}
+//     Err(anyhow::anyhow!("你连中文字体都没有？"))
+// }
 fn main() -> eframe::Result<()> {
     // 设置日志
 

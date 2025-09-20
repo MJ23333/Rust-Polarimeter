@@ -1707,7 +1707,7 @@ impl PolarimeterApp {
             .default_width(400.0)
             .max_width(600.0)
             .show(ctx, |ui| {
-                let _response = egui_commonmark::commonmark_str!("example", ui, &mut self.cache, "a.md");
+                let _response = egui_commonmark::commonmark_str!("example", ui, &mut self.cache, "README.md");
             });
     }
 }
