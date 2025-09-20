@@ -42,10 +42,8 @@ jobs:
           }
           # 运行 vcpkg 的启动脚本
           cd '${{ env.VCPKG_ROOT }}'
-          ./bootstrap-vcpkg.bat
-          # 安装我们需要的库
-          # 注意：这里我们使用 opencv4[contrib] 来获取更完整的功能
-          ./vcpkg.exe install opencv4[contrib] llvm --triplet x64-windows
+          & '${{ env.VCPKG_ROOT }}/bootstrap-vcpkg.bat'
+          & '${{ env.VCPKG_ROOT }}/vcpkg.exe' install opencv4[contrib] llvm --triplet x64-windows
       shell: pwsh
   
     - name: Install Rust
