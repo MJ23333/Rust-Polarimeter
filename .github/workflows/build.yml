@@ -15,48 +15,44 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4 # 检出你的代码
-
+    - name: Set up MSVC Developer Command Prompt
+      uses: ilammy/msvc-dev-cmd@v1
     
 
 
-    - name: Install OpenCV and LLVM
-      run: choco install opencv --version=4.11.0 -y; choco install llvm -y
+    # - name: Install OpenCV and LLVM
+    #   run: choco install opencv --version=4.11.0 -y; choco install llvm -y
 
-    - name: Discover and Set OpenCV Environment Variables
-      id: set_opencv_vars
-      run: |
-          echo "OPENCV_INCLUDE_PATHS=C:\tools\opencv\build\include" >> $env:GITHUB_ENV
+    # - name: Discover and Set OpenCV Environment Variables
+    #   id: set_opencv_vars
+    #   run: |
+    #       echo "OPENCV_INCLUDE_PATHS=C:\tools\opencv\build\include" >> $env:GITHUB_ENV
 
-          $IncludePath = "C:\tools\opencv\build\include"
-          echo "OPENCV_INCLUDE_PATHS=$IncludePath" >> $env:GITHUB_ENV
-          Write-Output "OPENCV_INCLUDE_PATHS=$IncludePath"
+    #       $IncludePath = "C:\tools\opencv\build\include"
+    #       echo "OPENCV_INCLUDE_PATHS=$IncludePath" >> $env:GITHUB_ENV
+    #       Write-Output "OPENCV_INCLUDE_PATHS=$IncludePath"
 
-          # Discover the lib path (robustly finds the vc* folder)
-          $LibDir = (Get-ChildItem "C:\tools\opencv\build\x64" -Directory | Where-Object { $_.Name -like 'vc*' } | Select-Object -First 1)
-          if (-not $LibDir) {
-            Write-Error "Could not find the VC++ version-specific lib directory in $env:OpenCV_DIR\x64"
-            exit 1
-          }
-          $LibPath = "$($LibDir.FullName)\lib"
-          echo "OPENCV_LINK_PATHS=$LibPath" >> $env:GITHUB_ENV
-          Write-Output "OPENCV_LINK_PATHS=$LibPath"
+    #       # Discover the lib path (robustly finds the vc* folder)
+    #       $LibDir = (Get-ChildItem "C:\tools\opencv\build\x64" -Directory | Where-Object { $_.Name -like 'vc*' } | Select-Object -First 1)
+    #       if (-not $LibDir) {
+    #         Write-Error "Could not find the VC++ version-specific lib directory in $env:OpenCV_DIR\x64"
+    #         exit 1
+    #       }
+    #       $LibPath = "$($LibDir.FullName)\lib"
+    #       echo "OPENCV_LINK_PATHS=$LibPath" >> $env:GITHUB_ENV
+    #       Write-Output "OPENCV_LINK_PATHS=$LibPath"
           
-          # Discover all library names in that path
-          $ReleaseLibNames = (Get-ChildItem $LibPath -Filter "*.lib" | Where-Object { $_.Name -notlike "*d.lib" }).Name -replace '\.lib$' -join ','
-          if (-not $ReleaseLibNames) {
-            Write-Error "Could not find any RELEASE .lib files (not ending with d.lib) in $LibPath"
-            exit 1
-          }
-          echo "OPENCV_LINK_LIBS=$ReleaseLibNames" >> $env:GITHUB_ENV
-          Write-Output "OPENCV_LINK_LIBS=$ReleaseLibNames"
+    #       # Discover all library names in that path
+    #       $ReleaseLibNames = (Get-ChildItem $LibPath -Filter "*.lib" | Where-Object { $_.Name -notlike "*d.lib" }).Name -replace '\.lib$' -join ','
+    #       if (-not $ReleaseLibNames) {
+    #         Write-Error "Could not find any RELEASE .lib files (not ending with d.lib) in $LibPath"
+    #         exit 1
+    #       }
+    #       echo "OPENCV_LINK_LIBS=$ReleaseLibNames" >> $env:GITHUB_ENV
+    #       Write-Output "OPENCV_LINK_LIBS=$ReleaseLibNames"
          
-      shell: pwsh
-     # echo "OPENCV_INCLUDE_PATHS=C:\tools\opencv\build\include" >> $env:GITHUB_ENV
-
-          # # Discover the lib path (robustly finds the vc* folder)
-          # echo "OPENCV_LINK_PATHS=C:\tools\opencv\build\x64\vc17\lib" >> $env:GITHUB_ENV
-          
-          # echo "OPENCV_LINK_LIBS=opencv_world4110" >> $env:GITHUB_ENV
+    #   shell: pwsh
+     
     # - name: Install Rust
     #   uses: dtolnay/rust-toolchain@stable
     #   with:
@@ -86,17 +82,17 @@ jobs:
         # ======================================================================
         # vvvvvvvvvvvvvv     模糊查找 DLL 的核心改进     vvvvvvvvvvvvvvvv
         # ======================================================================
-        Write-Output "Copying OpenCV DLLs using wildcards..."
-        $OpenCVBinDir = (Get-ChildItem "C:\tools\opencv\build\x64" -Directory | Where-Object { $_.Name -like 'vc*' } | Select-Object -First 1).FullName + "\bin"
+        # Write-Output "Copying OpenCV DLLs using wildcards..."
+        # $OpenCVBinDir = (Get-ChildItem "C:\tools\opencv\build\x64" -Directory | Where-Object { $_.Name -like 'vc*' } | Select-Object -First 1).FullName + "\bin"
 
-        $ReleaseDll = Get-ChildItem -Path $OpenCVBinDir -Filter "opencv_world*.dll" | Where-Object { $_.Name -notlike "*d.dll" } | Select-Object -First 1
-        if ($ReleaseDll) {
-            Write-Output "Found and copying Release DLL: $($ReleaseDll.Name)"
-            Copy-Item -Path $ReleaseDll.FullName -Destination $PKG_DIR
-        } else {
-            # 如果找不到，构建应该失败，因为这是必需的依赖。
-            Write-Error "FATAL: Could not find the release OpenCV world DLL."
-            exit 1
+        # $ReleaseDll = Get-ChildItem -Path $OpenCVBinDir -Filter "opencv_world*.dll" | Where-Object { $_.Name -notlike "*d.dll" } | Select-Object -First 1
+        # if ($ReleaseDll) {
+        #     Write-Output "Found and copying Release DLL: $($ReleaseDll.Name)"
+        #     Copy-Item -Path $ReleaseDll.FullName -Destination $PKG_DIR
+        # } else {
+        #     # 如果找不到，构建应该失败，因为这是必需的依赖。
+        #     Write-Error "FATAL: Could not find the release OpenCV world DLL."
+        #     exit 1
         }
         # ======================================================================
         # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
