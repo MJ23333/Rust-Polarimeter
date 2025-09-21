@@ -12,7 +12,6 @@ use tracing::{error, info};
 #[derive(Clone, Debug, Default)]
 pub struct CameraSettings {
     pub exposure: f64,
-    pub show_circle: bool,
     pub lock_circle: bool,
     pub locked_circle: Option<(i32, i32, i32)>,
     pub min_radius: i32,
@@ -62,10 +61,11 @@ impl CameraManager {
                 while !thread_stop_signal.load(Ordering::Relaxed) {
                     let mut frame = Mat::default();
                     let start_time = Instant::now();
-
-                    // if cam.set(videoio::CAP_PROP_AUTO_EXPOSURE, 0.0).is_err() && cam.set(videoio::CAP_PROP_EXPOSURE, settings_guard.exposure).is_err(){
-                    //         error!("曝光设置失败");
-                    // }
+                    let expo={settings.lock().exposure};
+                    if cam.set(videoio::CAP_PROP_AUTO_EXPOSURE, 0.25).is_err()&&cam.set(videoio::CAP_PROP_EXPOSURE, expo).is_err(){
+                            error!("曝光设置失败");
+                    }
+                    // cam.set(videoio::CAP_PROP_AUTO_EXPOSURE, 0.0).is_err() &&
                     if let Ok(true) = cam.read(&mut frame) {
                         // consecutive_read_errors = 0;
                         // if getframe {

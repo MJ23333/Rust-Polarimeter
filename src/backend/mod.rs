@@ -133,7 +133,6 @@ impl BackendState {
                 serial_port: None,
                 camera_settings: Arc::new(Mutex::new(CameraSettings {
                     exposure: -8.0,
-                    show_circle: true,
                     lock_circle: false,
                     locked_circle: None,
                     min_radius: 30,

@@ -51,6 +51,7 @@ pub enum CameraCommand {
     Disconnect,
     SetHoughCircleRadius { min: u32, max: u32 },
     SetLock(bool),
+    Exposure(f64),
 }
 
 #[derive(Debug, Clone)]

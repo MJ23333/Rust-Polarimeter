@@ -169,6 +169,11 @@ pub fn handle_camera(
             settings.lock_circle = value;
             info!("圆锁定状态已更新为: {}", value);
         } //_ => info!("收到未实现的 CameraCommand"),
+        CameraCommand::Exposure(value)=>{
+            let state_guard = state.lock();
+            let mut settings = state_guard.devices.camera_settings.lock();
+            settings.exposure = value;
+        }
     }
     Ok(())
 }
@@ -270,6 +275,7 @@ pub fn handle_dynamic_measure(
         }
         DynamicMeasureCommand::UpdateParams { params }=>{
             state.lock().measurement.dynamic_params=params;
+            info!("已更新参数");
         }
         DynamicMeasureCommand::Stop => {
             if let Some(token) = &state.lock().measurement.dynamic_task_token {

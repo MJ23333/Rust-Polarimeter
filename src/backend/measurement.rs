@@ -309,7 +309,7 @@ pub fn static_measurement(
                 return Err(anyhow!("测试被用户中断"));
             }
             let mut predictions: VecDeque<usize> = VecDeque::from(vec![2; 5]);
-            let timeout = Duration::from_secs(60);
+            let timeout = Duration::from_secs(90);
             let start_time = Instant::now();
             let mut first = 2;
             let mut result1: Option<i32> = None;
@@ -428,11 +428,11 @@ pub fn static_measurement(
                         step_move(state, tx, MoveMode::StepForward)?;
 
                     // should_break=true;
-                    thread::sleep(Duration::from_millis(10));
+                    thread::sleep(Duration::from_millis(5));
                 } else {
                         step_move(state, tx, MoveMode::StepBackward)?;
                     // should_break=true;
-                    thread::sleep(Duration::from_millis(10));
+                    thread::sleep(Duration::from_millis(5));
                 }
                 if !find_zero {
                     tx.send(Update::Measurement(MeasurementUpdate::CurrentSteps(
@@ -517,7 +517,7 @@ pub fn pre_rotation(
         }
 
         let mut predictions: VecDeque<usize> = VecDeque::from(vec![2; 5]);
-        let timeout = Duration::from_secs(60);
+        let timeout = Duration::from_secs(90);
         let start_time = Instant::now();
         let mut first = 2;
         let (model, isama) = {
@@ -606,10 +606,10 @@ pub fn pre_rotation(
                 thread::sleep(Duration::from_millis(150));
             } else if first == 1 {
                     step_move(state, tx, MoveMode::StepForward)?;
-                thread::sleep(Duration::from_millis(10));
+                thread::sleep(Duration::from_millis(5));
             } else {
                     step_move(state, tx, MoveMode::StepBackward)?;
-                thread::sleep(Duration::from_millis(10));
+                thread::sleep(Duration::from_millis(5));
             }
             tx.send(Update::Measurement(MeasurementUpdate::CurrentSteps(
                 state.lock().measurement.current_steps,
@@ -707,7 +707,7 @@ pub fn run_dynamic_experiment_loop(
         precision_rotate(state, tx, (params.step_angle * 746.0).round() as i32)?;
         info!("动态追踪：预旋转完成");
 
-        let timeout = Duration::from_secs(1000);
+        let timeout = Duration::from_secs(2000);
         let mut predictions: VecDeque<usize> = VecDeque::from(vec![2; 5]);
         let mut first=2;
         loop {
@@ -784,7 +784,7 @@ pub fn run_dynamic_experiment_loop(
             }
             if triggered {
                 // let elapsed_time =
-                {
+                let params={
                     let mut s = state.lock();
                     let result = crate::communication::DynamicResult {
                         index: s.measurement.dynamic_results.len() + 1,
@@ -797,10 +797,7 @@ pub fn run_dynamic_experiment_loop(
                         s.measurement.dynamic_results.clone(),
                     )))?;
                     info!("已测量第 {} 个点", s.measurement.dynamic_results.len());
-                    
-                }
-                let params={
-                    state.lock().measurement.dynamic_params.clone()
+                    s.measurement.dynamic_params.clone()  
                 };
                 save_dynamic_results(state, tx, params.clone())?;
                 precision_rotate(state, tx, (params.step_angle * 746.0).round() as i32)?;
