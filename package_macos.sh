@@ -103,6 +103,8 @@ for lib in "$FRAMEWORKS_PATH"/*.dylib; do
 done
 echo "      - 所有 dylib 库依赖修复并重签完毕"
 
+codesign --force --deep -s - "$BUNDLE_PATH"
+
 echo
 echo "======================================================================="
 echo "打包成功!"
