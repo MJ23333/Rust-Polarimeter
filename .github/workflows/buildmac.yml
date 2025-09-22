@@ -46,7 +46,7 @@ jobs:
         # zip -r "../../../${ARTIFACT_NAME}" "${APP_NAME}.app"
         # cd ../../../..
         cp -r "target/release/bundle/osx/${APP_NAME}.app" "package/"
-        cp -r "exposure\调节曝光（Mac）.app" "package/"
+        cp -r "exposure/调节曝光（Mac）.app" "package/"
         zip -r "${ARTIFACT_NAME}" "package"
         echo "artifact_name=${ARTIFACT_NAME}" >> $GITHUB_OUTPUT
       # shell: pwsh # 在 macOS runner 上也可以使用 PowerShell 来统一脚本语言
