@@ -1,6 +1,6 @@
 use super::{Arc, BackendState, Mutex};
 use crate::communication::{DeviceUpdate, Update};
-use anyhow::Result;
+use anyhow::{Error, Result};
 use crossbeam_channel::Sender;
 use opencv::{core, imgproc, prelude::*, videoio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -8,6 +8,91 @@ use std::thread;
 use std::time::{Duration, Instant};
 const TARGET_FRAME_DURATION: Duration = Duration::from_millis(33);
 use tracing::{error, info};
+
+// #[cfg(target_os = "macos")]
+// pub fn set_camera_exposure(
+//     camera_index: i32,
+//     exposure_value: f64,
+//     _cam: &mut videoio::VideoCapture, // _cam 在 macOS 上未使用，但为了统一签名而保留
+// ) -> Result<()> {
+//     use av_foundation::capture_device::{AVCaptureDevice,AVCaptureExposureModeCustom};
+//     use av_foundation::media_format::AVMediaTypeVideo;
+//     use av_foundation::
+//     unsafe {
+//         let devices = AVCaptureDevice::devices_with_media_type(AVMediaTypeVideo);
+//         if devices.is_empty() {
+//             anyhow::bail!("No video devices found.".to_string());
+//         }
+
+//         // 2. 根据 index 选择设备
+//         let device = devices
+//             .get(camera_index as usize)
+//             .ok_or_else(|| {
+//                 format!(
+//                     "Camera with index {} not found. Found {} devices.",
+//                     camera_index,
+//                     devices.len()
+//                 )
+//             })
+//             .unwrap();
+//         println!("Selected device: {}", device.localized_name());
+
+//         // 3. 锁定设备进行配置
+//         if let Err(_) = device.lock_for_configuration() {
+//             return anyhow::bail!("No video devices found.".to_string());
+//         }
+//         if device.is_exposure_mode_supported(AVCaptureExposureModeCustom) {
+//             device.set_exposure_mode(AVCaptureExposureModeCustom);
+
+//             // 将秒转换为 CMTime
+//             // CMTime 的 timescale 可以理解为分母，这里设为 1,000,000,000 (nanoseconds)
+//             let timescale = 1_000_000_000;
+//             let value = (exposure_value.exp2() * timescale as f64) as i64;
+//             let duration = CMTime::new(value, timescale);
+
+//             // 设置曝光时间和 ISO
+//             // 注意：这里需要检查设置的值是否在设备支持的范围内
+//             // let min_iso = device.active_format().min_iso();
+//             // let max_iso = device.active_format().max_iso();
+//             // ... 检查 iso 是否在 [min_iso, max_iso] 范围内 ...
+
+//             device.set_exposure_mode_custom_with_duration_iso_completion_handler(
+//                 duration,
+//                 iso,
+//                 |sync_time| {
+//                     // 这个闭包会在设置完成后被调用
+//                     println!("Exposure set successfully at time: {:?}", sync_time);
+//                 },
+//             );
+//         } else {
+//             // 如果设备不支持手动曝光，解锁并返回错误
+//             device.unlock_for_configuration();
+//             return Err("Custom exposure mode is not supported on this device.".to_string());
+//         }
+//     }
+
+//     Ok(())
+// }
+
+// // 在非 macOS 平台上，我们使用 OpenCV 的原生方法
+// #[cfg(not(target_os = "macos"))]
+pub fn set_camera_exposure(
+    _camera_index: i32, // _camera_index 在非 macOS 上未使用
+    exposure_value: f64,
+    cam: &mut videoio::VideoCapture,
+) -> Result<()> {
+    // 禁用自动曝光
+    if cam.set(videoio::CAP_PROP_AUTO_EXPOSURE, 0.0).is_err() {
+        tracing::warn!("无法禁用自动曝光");
+    }
+    // 设置手动曝光值
+    if cam.set(videoio::CAP_PROP_EXPOSURE, exposure_value).is_err() {
+        // 使用 anyhow::bail! 来创建一个错误并返回
+        anyhow::bail!("通过 OpenCV 设置曝光失败");
+    }
+    tracing::info!("爆");
+    Ok(())
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct CameraSettings {
@@ -57,25 +142,26 @@ impl CameraManager {
                         return;
                     }
                 };
-                let mut expo_old = -8.0;
-                if cam.set(videoio::CAP_PROP_AUTO_EXPOSURE, 0.0).is_err()
-                    && cam.set(videoio::CAP_PROP_EXPOSURE, expo_old).is_err()
-                {
-                    error!("曝光设置失败");
-                }
-                thread::sleep(Duration::from_millis(20));
+                let mut expo_old = f64::NAN;
                 // let mut consecutive_read_errors = 0;
                 while !thread_stop_signal.load(Ordering::Relaxed) {
                     let mut frame = Mat::default();
                     let start_time = Instant::now();
                     let expo = { settings.lock().exposure };
+
+                    // 如果曝光值有变化，则调用我们的平台抽象函数来设置
                     if expo_old != expo {
-                        if cam.set(videoio::CAP_PROP_AUTO_EXPOSURE, 0.0).is_err()
-                            && cam.set(videoio::CAP_PROP_EXPOSURE, expo).is_err()
-                        {
-                            error!("曝光设置失败");
+                        match set_camera_exposure(camera_index, expo, &mut cam) {
+                            Ok(_) => {
+                                info!("成功设置相机 {} 的曝光为 {}", camera_index, expo);
+                                expo_old = expo;
+                            }
+                            Err(e) => {
+                                error!("设置曝光失败: {}", e);
+                                // 即使失败，也更新 expo_old 以免重复尝试
+                                expo_old = expo;
+                            }
                         }
-                        expo_old = expo;
                     }
                     // cam.set(videoio::CAP_PROP_AUTO_EXPOSURE, 0.0).is_err() &&
                     if let Ok(true) = cam.read(&mut frame) {

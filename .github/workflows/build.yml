@@ -94,6 +94,8 @@ jobs:
         Write-Output "Copying Microsoft VC++ Runtime DLLs..."
         Copy-Item -Path "$env:VCToolsRedistDir\x64\Microsoft.VC143.CRT\*.dll" -Destination $PKG_DIR
 
+        Copy-Item -Path "exposure\调节曝光（Win）.exe" -Destination $PKG_DIR
+
         $ARTIFACT_NAME = "polarimeter-windows-v${{ github.run_number }}.zip"
         Compress-Archive -Path "$PKG_DIR\*" -DestinationPath $ARTIFACT_NAME
         

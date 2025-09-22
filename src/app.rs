@@ -476,17 +476,17 @@ impl PolarimeterApp {
                 // --- 日志 (最底部) ---
 
                 // --- 圆圈设定 (在日志上面) ---
-                ui.add_space(10.0);
-                ui.label(RichText::new("曝光设定").strong());
-                if ui.add(
-                        // egui::Slider::new(&mut self.min_radius, 1..=self.max_radius)
-                        //     .text("最小圆半径"),
-                        egui::DragValue::new(&mut self.exposure).clamp_range(-10.0..=10.0).speed(0.5),
-                    ).changed(){
-                        self.cmd_tx
-                        .send(Command::Camera(CameraCommand::Exposure(self.exposure)))
-                        .unwrap();
-                    }
+                // ui.add_space(10.0);
+                // ui.label(RichText::new("曝光设定").strong());
+                // if ui.add(
+                //         // egui::Slider::new(&mut self.min_radius, 1..=self.max_radius)
+                //         //     .text("最小圆半径"),
+                //         egui::DragValue::new(&mut self.exposure).clamp_range(-10.0..=10.0).speed(0.5),
+                //     ).changed(){
+                //         self.cmd_tx
+                //         .send(Command::Camera(CameraCommand::Exposure(self.exposure)))
+                //         .unwrap();
+                //     }
                 ui.add_space(10.0);
                 ui.label(RichText::new("识别设定").strong()); // 占满宽度
                 if ui

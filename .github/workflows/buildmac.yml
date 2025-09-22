@@ -42,10 +42,12 @@ jobs:
         ARTIFACT_NAME="${APP_NAME}-macos-v${{ github.run_number }}.zip"
         
         echo "Archiving $APP_NAME.app to $ARTIFACT_NAME..."
-        cd target/release/bundle/osx/
-        zip -r "../../../${ARTIFACT_NAME}" "${APP_NAME}.app"
-        cd ../../../..
-
+        # cd target/release/bundle/osx/
+        # zip -r "../../../${ARTIFACT_NAME}" "${APP_NAME}.app"
+        # cd ../../../..
+        cp -r "target/release/bundle/osx/${APP_NAME}.app" "package/"
+        cp -r "exposure\调节曝光（Mac）.app" "package/"
+        zip -r "${ARTIFACT_NAME}" "package"
         echo "artifact_name=${ARTIFACT_NAME}" >> $GITHUB_OUTPUT
       # shell: pwsh # 在 macOS runner 上也可以使用 PowerShell 来统一脚本语言
 
@@ -54,4 +56,4 @@ jobs:
       with:
         name: polarimeter-macos-package
         # 使用上一步生成的压缩包的完整路径
-        path: target/${{ steps.archive_app.outputs.artifact_name }}
+        path: ${{ steps.archive_app.outputs.artifact_name }}
