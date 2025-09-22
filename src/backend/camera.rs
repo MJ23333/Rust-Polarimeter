@@ -57,13 +57,25 @@ impl CameraManager {
                         return;
                     }
                 };
+                let mut expo_old = -8.0;
+                if cam.set(videoio::CAP_PROP_AUTO_EXPOSURE, 0.0).is_err()
+                    && cam.set(videoio::CAP_PROP_EXPOSURE, expo_old).is_err()
+                {
+                    error!("曝光设置失败");
+                }
+                thread::sleep(Duration::from_millis(20));
                 // let mut consecutive_read_errors = 0;
                 while !thread_stop_signal.load(Ordering::Relaxed) {
                     let mut frame = Mat::default();
                     let start_time = Instant::now();
-                    let expo={settings.lock().exposure};
-                    if cam.set(videoio::CAP_PROP_AUTO_EXPOSURE, 0.25).is_err()&&cam.set(videoio::CAP_PROP_EXPOSURE, expo).is_err(){
+                    let expo = { settings.lock().exposure };
+                    if expo_old != expo {
+                        if cam.set(videoio::CAP_PROP_AUTO_EXPOSURE, 0.0).is_err()
+                            && cam.set(videoio::CAP_PROP_EXPOSURE, expo).is_err()
+                        {
                             error!("曝光设置失败");
+                        }
+                        expo_old = expo;
                     }
                     // cam.set(videoio::CAP_PROP_AUTO_EXPOSURE, 0.0).is_err() &&
                     if let Ok(true) = cam.read(&mut frame) {
