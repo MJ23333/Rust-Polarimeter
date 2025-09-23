@@ -45,6 +45,7 @@ jobs:
         # cd target/release/bundle/osx/
         # zip -r "../../../${ARTIFACT_NAME}" "${APP_NAME}.app"
         # cd ../../../..
+        mkdir package/
         cp -r "target/release/bundle/osx/${APP_NAME}.app" "package/"
         cp -r "exposure/调节曝光（Mac）.app" "package/"
         zip -r "${ARTIFACT_NAME}" "package"
