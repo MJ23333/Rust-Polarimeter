@@ -214,33 +214,6 @@ pub fn backend_loop(cmd_rx: Receiver<Command>, update_tx: Sender<Update>) {
                     } else {
                         drop(s);
                     }
-                    let mut s = state_for_monitor.lock();
-                    if s.devices.camera_manager.is_none() {
-                        s.devices.camera_manager = None;
-                        // info!("相机断开");
-                        let _ =
-                            tx.send(Update::Device(DeviceUpdate::CameraConnectionStatus(false)));
-                    } else {
-                        let frame = {
-                            s.devices
-                                .camera_manager
-                                .as_ref()
-                                .unwrap()
-                                .latest_frame
-                                .lock()
-                                .clone()
-                        };
-                        match frame {
-                            Some(_) => {}
-                            None => {
-                                // info!("相机断开");
-                                s.devices.camera_manager = None;
-                                let _ = tx.send(Update::Device(
-                                    DeviceUpdate::CameraConnectionStatus(false),
-                                ));
-                            }
-                        };
-                    }
 
                     // TODO: 在这里执行对 state_guard 中数据的检查逻辑
                     // 例如: if state_guard.measurement.some_field > threshold { ... }

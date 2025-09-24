@@ -231,3 +231,16 @@ pub struct TrainedModel {
     pub parameters: ndarray::Array1<f64>,
     pub intercept: f64,
 }
+
+pub enum FileDialogResult {
+    // 模型训练
+    StartRecording(PathBuf),
+    RecordedDataset(PathBuf),
+    PersistentDataset(PathBuf),
+    // 静态测量
+    SaveStaticResults(PathBuf),
+    // 动态测量
+    SaveDynamicExperiment(PathBuf),
+    // 数据处理
+    LoadDataProcessingFile(PathBuf),
+}

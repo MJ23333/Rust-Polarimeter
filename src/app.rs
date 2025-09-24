@@ -3,11 +3,12 @@
 // 假设此模块定义了所有与后端通信所需的 Command 和 Update 枚举
 // For standalone compilation, you would need to provide dummy definitions.
 use crate::communication::{self, *};
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use egui::{
     CentralPanel, Color32, ComboBox, DragValue, Frame, RichText, Stroke, TopBottomPanel, Ui,
 };
-use egui::{Pos2, Rect, Vec2}; use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
+use egui::{Pos2, Rect, Vec2};
+use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 // 新增：导入 Rect, Pos2, Vec2
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{Line, Plot, PlotPoints, Points};
@@ -35,6 +36,12 @@ pub struct PolarimeterApp {
     backend_handle: Option<thread::JoinHandle<()>>,
     log_buffer: VecDeque<communication::LogMessage>,
     cache: CommonMarkCache,
+    file_dialog_rx: Receiver<Option<FileDialogResult>>, // 通用接收器
+    file_dialog_tx: Sender<Option<FileDialogResult>>,   // 通用发送器
+    selected_record: Option<PathBuf>,
+    dynamic_save_path: Option<PathBuf>,
+    // selected_dynamic: string,
+
     // --- UI 核心状态 ---
     active_tab: Tab, // 当前激活的标签页
 
@@ -94,7 +101,7 @@ pub struct PolarimeterApp {
 
     // --- 窗口 4: 动态测量 ---
     dynamic_params: DynamicExpParams,
-    dynamic_save_path: String,
+
     dynamic_measurement_status: String,
     dynamic_results: Vec<DynamicResult>,
     is_dynamic_exp_running: bool,
@@ -130,6 +137,8 @@ impl eframe::App for PolarimeterApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // 1. 优先处理所有后端消息和相机图像更新
         self.handle_backend_updates();
+
+        self.handle_file_dialog_results();
         if let Some(image) = self.camera_image.take() {
             let texture = ctx.load_texture("camera_feed", image, Default::default());
             self.camera_texture = Some(texture);
@@ -195,7 +204,6 @@ impl eframe::App for PolarimeterApp {
         }
 
         // (可选) 独立的模型评估结果窗口
-        
 
         // 4. 请求重绘以保持UI流畅 (相机画面等)
         ctx.request_repaint();
@@ -215,10 +223,14 @@ impl PolarimeterApp {
         cmd_tx
             .send(Command::Camera(CameraCommand::RefreshCameras))
             .unwrap();
+        let (file_dialog_tx, file_dialog_rx) = unbounded(); // 创建通道
 
         Self {
             cmd_tx,
             update_rx,
+            file_dialog_tx,
+            file_dialog_rx,
+            selected_record: None,
             log_buffer: VecDeque::with_capacity(100),
             backend_handle,
             cache: CommonMarkCache::default(),
@@ -274,7 +286,7 @@ impl PolarimeterApp {
                 step_angle: -0.5,
                 sample_points: 12,
             },
-            dynamic_save_path: String::new(),
+            dynamic_save_path: None,
             dynamic_measurement_status: String::new(),
             dynamic_results: Vec::new(),
             is_dynamic_exp_running: false,
@@ -405,6 +417,50 @@ impl PolarimeterApp {
             }
         }
     }
+    fn handle_file_dialog_results(&mut self) {
+        if let Ok(Some(result)) = self.file_dialog_rx.try_recv() {
+            match result {
+                FileDialogResult::StartRecording(path) => {
+                    // <--- 新增的分支
+                    self.selected_record = Some(path);
+                }
+                FileDialogResult::RecordedDataset(path) => {
+                    self.recorded_dataset_path = path.to_string_lossy().to_string();
+                    self.cmd_tx
+                        .send(Command::Training(TrainingCommand::LoadRecordedDataset {
+                            path,
+                        }))
+                        .unwrap();
+                }
+                FileDialogResult::PersistentDataset(path) => {
+                    self.dataset_path = path.to_string_lossy().to_string();
+                    self.cmd_tx
+                        .send(Command::Training(TrainingCommand::LoadPersistentDataset {
+                            path,
+                        }))
+                        .unwrap();
+                }
+                FileDialogResult::SaveStaticResults(path) => {
+                    self.cmd_tx
+                        .send(Command::StaticMeasure(StaticMeasureCommand::SaveResults {
+                            path,
+                        }))
+                        .unwrap();
+                }
+                FileDialogResult::SaveDynamicExperiment(path) => {
+                    self.dynamic_params.path = path.clone();
+                    self.dynamic_save_path = Some(path);
+                }
+                FileDialogResult::LoadDataProcessingFile(path) => {
+                    self.cmd_tx
+                        .send(Command::DataProcessing(DataProcessingCommand::LoadData {
+                            path,
+                        }))
+                        .unwrap();
+                }
+            }
+        }
+    }
 
     // ===================================================================================
     //  新布局的绘制函数
@@ -504,12 +560,15 @@ impl PolarimeterApp {
                     let min_radius_slider = ui.add(
                         // egui::Slider::new(&mut self.min_radius, 1..=self.max_radius)
                         //     .text("最小圆半径"),
-                        egui::DragValue::new(&mut self.min_radius).clamp_range(1..=self.max_radius).speed(5),
+                        egui::DragValue::new(&mut self.min_radius)
+                            .clamp_range(1..=self.max_radius)
+                            .speed(5),
                     );
                     ui.label("~");
                     let max_radius_slider = ui.add(
                         egui::DragValue::new(&mut self.max_radius)
-                            .clamp_range(self.min_radius..=200).speed(5),
+                            .clamp_range(self.min_radius..=200)
+                            .speed(5),
                     );
                     if min_radius_slider.changed() || max_radius_slider.changed() {
                         self.cmd_tx
@@ -871,17 +930,31 @@ impl PolarimeterApp {
                         .speed(0.1)
                         .suffix("°"),
                 );
-                if !self.is_recording {
+                if !self.is_recording && self.selected_record.is_none() {
+                    if ui.button("选择路径").clicked() {
+                        let tx = self.file_dialog_tx.clone();
+
+                        // 启动线程来显示文件夹选择对话框
+                        thread::spawn(move || {
+                            if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                                // 将包含路径的结果发送回UI线程
+                                tx.send(Some(FileDialogResult::StartRecording(path))).ok();
+                            } else {
+                                // 如果用户取消，也发送一个None信号（可选，但良好实践）
+                                tx.send(None).ok();
+                            }
+                        });
+                    }
+                } else if !self.is_recording {
                     if ui.button("开始录制").clicked() {
-                        if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                            self.cmd_tx
-                                .send(Command::Device(DeviceCommand::StartRecording {
-                                    mode: self.recording_mode.clone(),
-                                    save_path: path,
-                                    num: (self.recording_angle * 746.0).round() as i32,
-                                }))
-                                .unwrap();
-                        }
+                        self.cmd_tx
+                            .send(Command::Device(DeviceCommand::StartRecording {
+                                mode: self.recording_mode.clone(),
+                                save_path: self.selected_record.as_mut().unwrap().clone(),
+                                num: (self.recording_angle * 746.0).round() as i32,
+                            }))
+                            .unwrap();
+                        self.selected_record = None;
                     }
                 } else {
                     if ui.button("停止录制").clicked() {
@@ -918,14 +991,14 @@ impl PolarimeterApp {
                         ui.add(label);
                     });
                     if ui.button("...").clicked() {
-                        if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                            self.recorded_dataset_path = path.to_string_lossy().to_string();
-                            self.cmd_tx
-                                .send(Command::Training(TrainingCommand::LoadRecordedDataset {
-                                    path: self.recorded_dataset_path.clone().into(),
-                                }))
-                                .unwrap();
-                        }
+                        let tx = self.file_dialog_tx.clone();
+                        thread::spawn(move || {
+                            if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                                tx.send(Some(FileDialogResult::RecordedDataset(path))).ok();
+                            } else {
+                                tx.send(None).ok();
+                            }
+                        });
                     }
                     if ui.button("重置").clicked() {
                         // if let Some(path) = rfd::FileDialog::new().pick_folder() {
@@ -950,14 +1023,15 @@ impl PolarimeterApp {
                         ui.add(label);
                     });
                     if ui.button("...").clicked() {
-                        if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                            self.dataset_path = path.to_string_lossy().to_string();
-                            self.cmd_tx
-                                .send(Command::Training(TrainingCommand::LoadPersistentDataset {
-                                    path: self.dataset_path.clone().into(),
-                                }))
-                                .unwrap();
-                        }
+                        let tx = self.file_dialog_tx.clone();
+                        thread::spawn(move || {
+                            if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                                tx.send(Some(FileDialogResult::PersistentDataset(path)))
+                                    .ok();
+                            } else {
+                                tx.send(None).ok();
+                            }
+                        });
                     }
                     if ui.button("重置").clicked() {
                         // if let Some(path) = rfd::FileDialog::new().pick_folder() {
@@ -1188,16 +1262,18 @@ impl PolarimeterApp {
         ui.label(RichText::new("测量结果").strong());
         ui.horizontal(|ui| {
             if ui.button("保存结果").clicked() {
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("Excel", &["xlsx"])
-                    .save_file()
-                {
-                    self.cmd_tx
-                        .send(Command::StaticMeasure(StaticMeasureCommand::SaveResults {
-                            path,
-                        }))
-                        .unwrap();
-                }
+                let tx = self.file_dialog_tx.clone();
+                thread::spawn(move || {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Excel", &["xlsx"])
+                        .save_file()
+                    {
+                        tx.send(Some(FileDialogResult::SaveStaticResults(path)))
+                            .ok();
+                    } else {
+                        tx.send(None).ok();
+                    }
+                });
             }
             if ui.button("清除结果").clicked() {
                 self.cmd_tx
@@ -1360,24 +1436,34 @@ impl PolarimeterApp {
                     && !self.is_static_running
                     && self.current_angle.is_some(),
                 |ui| {
-                    if !self.start_time.is_some() {
+                    if !self.start_time.is_some() && self.dynamic_save_path.is_none() {
+                        if ui.button("选择路径").clicked() {
+                            let tx = self.file_dialog_tx.clone();
+                            thread::spawn(move || {
+                                if let Some(path) = rfd::FileDialog::new()
+                                    .add_filter("Excel", &["xlsx"])
+                                    .save_file()
+                                {
+                                    tx.send(Some(FileDialogResult::SaveDynamicExperiment(path)))
+                                        .ok();
+                                } else {
+                                    tx.send(None).ok();
+                                }
+                            });
+                        }
+                    } else if !self.start_time.is_some() {
                         if ui.button("开始计时").clicked() {
-                            if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("Excel", &["xlsx"])
-                                .save_file()
-                            {
-                                self.dynamic_params.path = path;
-                                self.cmd_tx
-                                    .send(Command::DynamicMeasure(
-                                        DynamicMeasureCommand::UpdateParams {
-                                            params: self.dynamic_params.clone(),
-                                        },
-                                    ))
-                                    .unwrap();
-                                self.cmd_tx
-                                    .send(Command::DynamicMeasure(DynamicMeasureCommand::StartNew))
-                                    .unwrap();
-                            }
+                            self.cmd_tx
+                                .send(Command::DynamicMeasure(
+                                    DynamicMeasureCommand::UpdateParams {
+                                        params: self.dynamic_params.clone(),
+                                    },
+                                ))
+                                .unwrap();
+                            self.cmd_tx
+                                .send(Command::DynamicMeasure(DynamicMeasureCommand::StartNew))
+                                .unwrap();
+                            self.dynamic_save_path = None;
                         }
                     } else {
                         if ui.button("停止计时").clicked() {
@@ -1422,9 +1508,9 @@ impl PolarimeterApp {
                 },
             );
         });
-        if let Some(time)=self.start_time{
-                    ui.label(format!("{:.2} s", time.elapsed().as_secs_f64()));
-                // ui.label(format!("{}", self.dynamic_measurement_status));
+        if let Some(time) = self.start_time {
+            ui.label(format!("{:.2} s", time.elapsed().as_secs_f64()));
+            // ui.label(format!("{}", self.dynamic_measurement_status));
         }
         ui.add_space(10.0);
         // ui.label(format!("当前角度: {:.2}°", self.current_angle));
@@ -1503,15 +1589,19 @@ impl PolarimeterApp {
 
         ui.add_space(5.0);
         ui.horizontal(|ui| {
-            
             if ui.button("加载数据").clicked() {
-                if let Some(path) = rfd::FileDialog::new().add_filter("Excel", &["xlsx"]).pick_file() {
-                    self.cmd_tx
-                        .send(Command::DataProcessing(DataProcessingCommand::LoadData {
-                            path: path,
-                        }))
-                        .unwrap();
-                }
+                let tx = self.file_dialog_tx.clone();
+                thread::spawn(move || {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("Excel", &["xlsx"])
+                        .pick_file()
+                    {
+                        tx.send(Some(FileDialogResult::LoadDataProcessingFile(path)))
+                            .ok();
+                    } else {
+                        tx.send(None).ok();
+                    }
+                });
             }
             ui.add_enabled_ui(!self.raw_plot_data.is_empty(), |ui| {
                 ui.label("α∞:");
@@ -1578,7 +1668,6 @@ impl PolarimeterApp {
         TableBuilder::new(ui)
             .striped(true)
             // .resizable(true)
-            
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
             .columns(Column::auto().at_least(80.0), 4)
             .header(20.0, |mut h| {
@@ -1718,7 +1807,8 @@ impl PolarimeterApp {
             .default_width(400.0)
             .max_width(600.0)
             .show(ctx, |ui| {
-                let _response = egui_commonmark::commonmark_str!("example", ui, &mut self.cache, "README.md");
+                let _response =
+                    egui_commonmark::commonmark_str!("example", ui, &mut self.cache, "README.md");
             });
     }
 }
