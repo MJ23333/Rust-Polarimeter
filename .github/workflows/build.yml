@@ -193,8 +193,8 @@ jobs:
         with:
           # `upload_url` 是 GitHub 自动提供的，指向当前触发工作流的 Release
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: release-assets/polarimeter-macos-package.zip
-          asset_name: polarimeter-macos-package.zip
+          asset_path: release-assets/Win APP.zip
+          asset_name: Win APP.zip
           asset_content_type: application/zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -203,8 +203,8 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: release-assets/polarimeter-macos-package.zip
-          asset_name: polarimeter-macos-package.zip
+          asset_path: release-assets/Mac APP.zip
+          asset_name: Mac APP.zip
           asset_content_type: application/zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -221,5 +221,5 @@ jobs:
           gitee_target_commitish: master
           gitee_upload_retry_times: 3
           gitee_files: |
-            release-assets/polarimeter-macos-package.zip
-            release-assets/polarimeter-windows-package.zip
+            release-assets/Mac APP.zip
+            release-assets/Win APP.zip
