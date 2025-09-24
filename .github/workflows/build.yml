@@ -1,16 +1,13 @@
 name: Build Windows Executable
 
 on:
-  push:
-    branches: [ "main" ] # 当主分支有更新时触发
+  release:
+    types: [published]
   workflow_dispatch: # 允许手动触发
 
 jobs:
   build-windows:
     runs-on: windows-latest # 使用最新的 Windows 环境
-    strategy:
-      matrix:
-        rust: [stable]
 
     steps:
     - name: Checkout repository
@@ -175,14 +172,14 @@ jobs:
       - name: Download Windows asset
         uses: actions/download-artifact@v4
         with:
-          name: windows-asset
+          name: polarimeter-windows-package
           path: release-assets
 
       # 下载 macOS 构建产物到同一个文件夹
       - name: Download macOS asset
         uses: actions/download-artifact@v4
         with:
-          name: macos-asset
+          name: polarimeter-macos-package
           path: release-assets
       
       # (可选) 打印文件夹内容，用于调试
@@ -197,9 +194,8 @@ jobs:
           gitee_owner: mengsb
           gitee_repo: polarimeter-download
           gitee_token: ${{ secrets.GITEE_PRIVATE_TOKEN }}
-          gitee_tag_name: v1.5.5-build-${{ github.run_number }}
-          gitee_release_name: v1.5.5-build-${{ github.run_number }}
-          gitee_release_body: 正常自动更新
+          gitee_tag_name: ${{ github.ref_name }}
+          gitee_release_name: ${{ github.event.release.name }}
           gitee_target_commitish: master
           gitee_upload_retry_times: 3
           gitee_files: |
