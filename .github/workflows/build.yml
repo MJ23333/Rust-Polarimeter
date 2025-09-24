@@ -185,7 +185,27 @@ jobs:
       # (可选) 打印文件夹内容，用于调试
       - name: List assets for debugging
         run: ls -R release-assets
+        
+      - name: Upload Windows Asset to GitHub Release
+        uses: actions/upload-release-asset@v1
+        with:
+          # `upload_url` 是 GitHub 自动提供的，指向当前触发工作流的 Release
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: release-assets/polarimeter-macos-package.zip
+          asset_name: polarimeter-macos-package.zip
+          asset_content_type: application/zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Upload macOS Asset to GitHub Release
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: release-assets/polarimeter-macos-package.zip
+          asset_name: polarimeter-macos-package.zip
+          asset_content_type: application/zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # 核心步骤：上传整个文件夹的内容到 Gitee
       - name: Create Release with Multiple Files
         uses: nicennnnnnnlee/action-gitee-release@master
