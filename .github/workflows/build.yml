@@ -8,7 +8,9 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest # 使用最新的 Windows 环境
-
+    strategy:
+      matrix:
+        rust: [stable]
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4 # 检出你的代码
