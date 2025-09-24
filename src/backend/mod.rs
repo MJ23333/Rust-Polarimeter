@@ -8,16 +8,20 @@ mod serial;
 
 use self::camera::{CameraManager, CameraSettings};
 use crate::communication::{
-    Command, DataProcessingStateUpdate, DeviceCommand, DeviceUpdate, DynamicExpParams, GeneralCommand, GeneralUpdate, MeasurementUpdate, RegressionMode, Update
+    Command, DataProcessingStateUpdate, DeviceCommand, DeviceUpdate, DynamicExpParams,
+    GeneralCommand, GeneralUpdate, MeasurementUpdate, RegressionMode, Update,
 };
 use crossbeam_channel::{Receiver, Sender};
 use parking_lot::Mutex;
-use std::{path::PathBuf, sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-}};
 use std::thread;
 use std::time::Duration;
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 use tracing::{error, info};
 // use self::error::{ BackendError};
 use super::communication::{DynamicResult, StaticResult};
@@ -74,7 +78,7 @@ pub struct MeasurementState {
     dynamic_results: Vec<DynamicResult>,
     dynamic_task_token: Option<CancellationToken>,
     dynamic_time: Option<std::time::Instant>,
-    dynamic_params: DynamicExpParams
+    dynamic_params: DynamicExpParams,
 }
 #[derive(Clone, Debug)]
 pub struct DataProcessingState {
@@ -153,14 +157,14 @@ impl BackendState {
                 dynamic_task_token: None,
                 dynamic_time: None,
                 dynamic_params: DynamicExpParams {
-                path: PathBuf::new(),
-                temperature: 25.0,
-                sucrose_conc: 0.0,
-                hcl_conc: 0.0,
-                pre_rotation_angle: 5.0,
-                step_angle: -0.5,
-                sample_points: 12,
-            },
+                    path: PathBuf::new(),
+                    temperature: 25.0,
+                    sucrose_conc: 0.0,
+                    hcl_conc: 0.0,
+                    pre_rotation_angle: 5.0,
+                    step_angle: -0.5,
+                    sample_points: 12,
+                },
             },
             data_processing: DataProcessingState::new(),
             rotation_direction_is_ama: false,
@@ -177,7 +181,7 @@ pub fn backend_loop(cmd_rx: Receiver<Command>, update_tx: Sender<Update>) {
     let state = Arc::new(Mutex::new(BackendState::new()));
     let global_shutdown_signal = state.lock().shutdown_signal.clone();
 
-    if false{
+    if true {
         // 为监控线程创建专属的取消令牌
         let monitor_token = Arc::new(AtomicBool::new(false));
         let state_for_monitor = Arc::clone(&state);
@@ -188,6 +192,7 @@ pub fn backend_loop(cmd_rx: Receiver<Command>, update_tx: Sender<Update>) {
         let monitor_handle = thread::spawn(move || {
             info!("状态监控线程已启动。");
             // 只要未收到取消信号，就持续运行
+            let mut times = 1;
             while !token_for_monitor.load(Ordering::Relaxed) {
                 {
                     // 使用独立的块来限制 MutexGuard 的生命周期
@@ -200,11 +205,19 @@ pub fn backend_loop(cmd_rx: Receiver<Command>, update_tx: Sender<Update>) {
                         let _ = tx.send(Update::Measurement(MeasurementUpdate::CurrentSteps(
                             s.measurement.current_steps,
                         )));
+                        drop(s);
                         // info!("串口断开");
+                    } else if times % 10 == 0 {
+                        let port = s.devices.serial_port.as_mut().unwrap().clone();
+                        drop(s);
+                        let _=measurement::cmd(port, 77 as u8);
+                    } else {
+                        drop(s);
                     }
+                    let mut s = state_for_monitor.lock();
                     if s.devices.camera_manager.is_none() {
                         s.devices.camera_manager = None;
-                        info!("相机断开");
+                        // info!("相机断开");
                         let _ =
                             tx.send(Update::Device(DeviceUpdate::CameraConnectionStatus(false)));
                     } else {
@@ -220,7 +233,7 @@ pub fn backend_loop(cmd_rx: Receiver<Command>, update_tx: Sender<Update>) {
                         match frame {
                             Some(_) => {}
                             None => {
-                                info!("相机断开");
+                                // info!("相机断开");
                                 s.devices.camera_manager = None;
                                 let _ = tx.send(Update::Device(
                                     DeviceUpdate::CameraConnectionStatus(false),
@@ -234,9 +247,10 @@ pub fn backend_loop(cmd_rx: Receiver<Command>, update_tx: Sender<Update>) {
                     // 锁会在这个块的末尾自动释放，这很重要，
                     // 因为我们不应该在持有锁的时候睡眠。
                 }
-
+                // info!("OK");
                 // 线程休眠一秒
                 thread::sleep(Duration::from_secs(1));
+                times += 1;
             }
             info!("状态监控线程已关停。");
         });
