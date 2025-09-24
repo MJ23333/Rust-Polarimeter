@@ -5,6 +5,8 @@ on:
     types: [published]
   workflow_dispatch: # 允许手动触发
 
+permissions:
+  contents: write
 jobs:
   build-windows:
     runs-on: windows-latest # 使用最新的 Windows 环境
