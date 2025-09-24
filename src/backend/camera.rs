@@ -190,12 +190,13 @@ impl CameraManager {
                             circle = cir;
                             let mut s = settings.lock();
                             s.locked_circle = circle;
-                            if let Some(color_image) = mat_to_color_image(processed_frame) {
+                            
+                        }
+                        if let Some(color_image) = mat_to_color_image(processed_frame) {
                                 let _ = update_tx.send(Update::Device(
                                     DeviceUpdate::NewCameraFrame(Arc::new(color_image)),
                                 ));
                             }
-                        }
                     } else {
                         // info!("相机断开3");
                         *thread_latest_frame.lock() = None;

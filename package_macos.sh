@@ -49,9 +49,7 @@ echo
 echo "[1/6] 正在使用 cargo-bundle 创建基础 .app 包..."
 # 清理一下，确保是全新构建
 rm -rf "$BUNDLE_PATH"
-# cargo bundle --release 可能会继承旧的DYLD_LIBRARY_PATH, 最好取消设置或明确指定
-unset DYLD_FALLBACK_LIBRARY_PATH
-unset DYLD_LIBRARY_PATH
+export xport DYLD_FALLBACK_LIBRARY_PATH="/Library/Developer/CommandLineTools/usr/lib"
 cargo bundle --release
 
 echo
