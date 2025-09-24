@@ -96,7 +96,7 @@ jobs:
 
         Copy-Item -Path "exposure\调节曝光（Win）.exe" -Destination $PKG_DIR
 
-        $ARTIFACT_NAME = "polarimeter-windows-v${{ github.run_number }}.zip"
+        $ARTIFACT_NAME = "Win APP.zip"
         Compress-Archive -Path "$PKG_DIR\*" -DestinationPath $ARTIFACT_NAME
         
         echo "artifact_name=$ARTIFACT_NAME" >> $env:GITHUB_OUTPUT
@@ -107,3 +107,101 @@ jobs:
       with:
         name: polarimeter-windows-package
         path: ${{ steps.create_package.outputs.artifact_name }}
+  
+  build-macos:
+    runs-on: macos-latest # 使用最新的 macOS 环境
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Install Dependencies (Homebrew & Cargo)
+      run: |
+        # GitHub Actions 的 macOS runner 自带 Homebrew
+        echo "Installing OpenCV..."
+        brew install opencv
+        
+        echo "Installing cargo-bundle..."
+        cargo install cargo-bundle
+
+    - name: Make Packaging Script Executable
+      run: chmod +x package_macos.sh # 给予我们的打包脚本执行权限
+
+    - name: Run Packaging Script
+      # 这里直接执行我们之前编写好的脚本，完成所有核心打包工作
+      run: ./package_macos.sh
+
+    - name: Archive the Application
+      id: archive_app
+      run: |
+        APP_NAME="Polarimeter"
+        
+        ARTIFACT_NAME="${APP_NAME}-macos-v${{ github.run_number }}.zip"
+        
+        echo "Archiving $APP_NAME.app to $ARTIFACT_NAME..."
+        # cd target/release/bundle/osx/
+        # zip -r "../../../${ARTIFACT_NAME}" "${APP_NAME}.app"
+        # cd ../../../..
+        mkdir package/
+        cp -r "target/release/bundle/osx/${APP_NAME}.app" "package/"
+        cp -r "exposure/调节曝光（Mac）.app" "package/"
+        zip -r "${ARTIFACT_NAME}" "Mac APP"
+        echo "artifact_name=${ARTIFACT_NAME}" >> $GITHUB_OUTPUT
+      # shell: pwsh # 在 macOS runner 上也可以使用 PowerShell 来统一脚本语言
+
+    - name: Upload Artifact (zip)
+      uses: actions/upload-artifact@v4
+      with:
+        name: polarimeter-macos-package
+        # 使用上一步生成的压缩包的完整路径
+        path: ${{ steps.archive_app.outputs.artifact_name }}
+
+  sync-to-gitee:
+    name: Sync Release to Gitee
+    runs-on: ubuntu-latest
+    # ⭐ 关键：同时依赖 windows 和 macos 的构建 job
+    needs: [build-windows, build-macos]
+    steps:
+      # 创建一个文件夹来存放所有要上传的文件
+      - name: Create assets directory
+        run: mkdir release-assets
+
+      # 下载 Windows 构建产物到这个文件夹
+      - name: Download Windows asset
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-asset
+          path: release-assets
+
+      # 下载 macOS 构建产物到同一个文件夹
+      - name: Download macOS asset
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-asset
+          path: release-assets
+      
+      # (可选) 打印文件夹内容，用于调试
+      - name: List assets for debugging
+        run: ls -R release-assets
+
+      # 核心步骤：上传整个文件夹的内容到 Gitee
+      - name: Create Release with Multiple Files
+        uses: nicennnnnnnlee/action-gitee-release@master
+        with:
+          gitee_action: create_release
+          gitee_owner: mengsb
+          gitee_repo: polarimeter-download
+          gitee_token: ${{ secrets.GITEE_PRIVATE_TOKEN }}
+          gitee_tag_name: v1.5.5-build-${{ github.run_number }}
+          gitee_release_name: v1.5.5-build-${{ github.run_number }}
+          gitee_release_body: 正常自动更新
+          gitee_target_commitish: master
+          gitee_upload_retry_times: 3
+          gitee_files: |
+            release-assets/polarimeter-macos-package.zip
+            release-assets/polarimeter-windows-package.zip
