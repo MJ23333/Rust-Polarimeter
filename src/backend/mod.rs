@@ -79,6 +79,7 @@ pub struct MeasurementState {
     dynamic_task_token: Option<CancellationToken>,
     dynamic_time: Option<std::time::Instant>,
     dynamic_params: DynamicExpParams,
+    isrotation: bool
 }
 #[derive(Clone, Debug)]
 pub struct DataProcessingState {
@@ -115,6 +116,7 @@ pub struct BackendState {
     // --- NEW: 统一的任务管理器 ---
     // --- NEW: 全局关停信号 ---
     pub shutdown_signal: CancellationToken,
+
 }
 impl From<DataProcessingState> for DataProcessingStateUpdate {
     fn from(dp_state: DataProcessingState) -> Self {
@@ -155,6 +157,7 @@ impl BackendState {
                 static_task_token: None,
                 dynamic_results: Vec::new(),
                 dynamic_task_token: None,
+                isrotation:false,
                 dynamic_time: None,
                 dynamic_params: DynamicExpParams {
                     path: PathBuf::new(),

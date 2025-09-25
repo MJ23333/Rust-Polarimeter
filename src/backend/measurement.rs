@@ -127,8 +127,14 @@ pub fn precision_rotate(
         steps = -steps;
         mul = -1;
     }
+    if state.lock().measurement.isrotation == true {
+        return Ok(());
+    }
     info!("旋转 {} 步", steps);
-
+    {
+        state.lock().measurement.isrotation = true;
+        tx.send(Update::Measurement(MeasurementUpdate::Rotation(true)))?;
+    }
     let commands = if steps > 0 {
         vec![62, 60, 58, 56, 64, 66, 68] // 正转指令
     } else {
@@ -144,12 +150,17 @@ pub fn precision_rotate(
         steps %= divisors[i];
         for _ in 0..num_rotations {
             let mut s = state.lock();
+
             if s.devices.serial_port.is_none() {
                 tx.send(Update::Device(DeviceUpdate::SerialConnectionStatus(false)))?;
                 s.measurement.current_steps = None;
                 tx.send(Update::Measurement(MeasurementUpdate::CurrentSteps(
                     s.measurement.current_steps,
                 )))?;
+                {
+                    s.measurement.isrotation = false;
+                    tx.send(Update::Measurement(MeasurementUpdate::Rotation(false)))?;
+                }
                 return Err(anyhow!("执行失败，请重新连接串口并找零点：串口断开"));
             }
             let port = s.devices.serial_port.as_mut().unwrap().clone();
@@ -163,6 +174,10 @@ pub fn precision_rotate(
                 tx.send(Update::Measurement(MeasurementUpdate::CurrentSteps(
                     s.measurement.current_steps,
                 )))?;
+                {
+                    s.measurement.isrotation = false;
+                    tx.send(Update::Measurement(MeasurementUpdate::Rotation(false)))?;
+                }
                 //需要实现串口更新
                 error!("执行失败，请重新连接串口并找零点（{}）", e);
                 return Err(anyhow!("执行失败，请重新连接串口并找零点（{}）", e));
@@ -178,6 +193,10 @@ pub fn precision_rotate(
         }
     }
     info!("旋转完成");
+    {
+        state.lock().measurement.isrotation = false;
+        tx.send(Update::Measurement(MeasurementUpdate::Rotation(false)))?;
+    }
     Ok(())
 }
 
@@ -325,7 +344,7 @@ pub fn static_measurement(
                     // s.rotation_direction_need_reverse,
                 )
             };
-            let mut first_first=2;
+            let mut first_first = 2;
             loop {
                 let mut s = state.lock();
                 if start_time.elapsed() > timeout || token.load(Ordering::Relaxed) {
@@ -390,18 +409,18 @@ pub fn static_measurement(
                 if first == 2 {
                     first = prediction;
                 }
-                if first_first==2{
+                if first_first == 2 {
                     first_first = prediction;
-                    if prediction ==0{
+                    if prediction == 0 {
                         precision_rotate(state, tx, 746)?;
-                    }else{
+                    } else {
                         precision_rotate(state, tx, -746)?;
                     }
                 }
                 // thread::sleep(Duration::from_millis(500));(- = 1 0)
 
-                if predictions.iter().filter(|&x| *x == 1).count()>=3&&first==0 {
-                        step_move(state, tx, MoveMode::ResetBackward)?;
+                if predictions.iter().filter(|&x| *x == 1).count() >= 3 && first == 0 {
+                    step_move(state, tx, MoveMode::ResetBackward)?;
                     if result1.is_none() {
                         result1 = Some(state.lock().measurement.current_steps.unwrap());
                         first = 2;
@@ -412,8 +431,8 @@ pub fn static_measurement(
                         should_break = true;
                     }
                     thread::sleep(Duration::from_millis(150));
-                } else if predictions.iter().filter(|&x| *x == 0).count()>=3&&first==1 {
-                        step_move(state, tx, MoveMode::ResetForward)?;
+                } else if predictions.iter().filter(|&x| *x == 0).count() >= 3 && first == 1 {
+                    step_move(state, tx, MoveMode::ResetForward)?;
                     if result1.is_none() {
                         result1 = Some(state.lock().measurement.current_steps.unwrap());
                         first = 2;
@@ -425,12 +444,12 @@ pub fn static_measurement(
                     }
                     thread::sleep(Duration::from_millis(150));
                 } else if first == 1 {
-                        step_move(state, tx, MoveMode::StepForward)?;
+                    step_move(state, tx, MoveMode::StepForward)?;
 
                     // should_break=true;
                     thread::sleep(Duration::from_millis(5));
                 } else {
-                        step_move(state, tx, MoveMode::StepBackward)?;
+                    step_move(state, tx, MoveMode::StepBackward)?;
                     // should_break=true;
                     thread::sleep(Duration::from_millis(5));
                 }
@@ -596,19 +615,19 @@ pub fn pre_rotation(
             }
             // thread::sleep(Duration::from_millis(500));(- = 1 0)
 
-            if predictions.iter().filter(|&x| *x == 1).count()>=3&&first==0 {
-                    step_move(state, tx, MoveMode::ResetBackward)?;
+            if predictions.iter().filter(|&x| *x == 1).count() >= 3 && first == 0 {
+                step_move(state, tx, MoveMode::ResetBackward)?;
                 should_break = true;
                 thread::sleep(Duration::from_millis(150));
-            } else if predictions.iter().filter(|&x| *x == 0).count()>=3&&first==1 {
-                    step_move(state, tx, MoveMode::ResetForward)?;
+            } else if predictions.iter().filter(|&x| *x == 0).count() >= 3 && first == 1 {
+                step_move(state, tx, MoveMode::ResetForward)?;
                 should_break = true;
                 thread::sleep(Duration::from_millis(150));
             } else if first == 1 {
-                    step_move(state, tx, MoveMode::StepForward)?;
+                step_move(state, tx, MoveMode::StepForward)?;
                 thread::sleep(Duration::from_millis(5));
             } else {
-                    step_move(state, tx, MoveMode::StepBackward)?;
+                step_move(state, tx, MoveMode::StepBackward)?;
                 thread::sleep(Duration::from_millis(5));
             }
             tx.send(Update::Measurement(MeasurementUpdate::CurrentSteps(
@@ -700,20 +719,19 @@ pub fn run_dynamic_experiment_loop(
     let result = (|| -> Result<()> {
         info!("动态追踪：开始预旋转");
         pre_rotation(state, tx, token.clone())?;
-        
-        let params={
-            state.lock().measurement.dynamic_params.clone()
-        };
+
+        let params = { state.lock().measurement.dynamic_params.clone() };
         precision_rotate(state, tx, (params.step_angle * 746.0).round() as i32)?;
         info!("动态追踪：预旋转完成");
 
-        let timeout = Duration::from_secs(2000);
+        let timeout = Duration::from_secs(5000);
         let mut predictions: VecDeque<usize> = VecDeque::from(vec![2; 5]);
-        let mut first=2;
+        let mut first = 2;
         loop {
             let mut s = state.lock();
             if token.load(Ordering::Relaxed)
-                || s.measurement.dynamic_results.len() >= s.measurement.dynamic_params.sample_points as usize
+                || s.measurement.dynamic_results.len()
+                    >= s.measurement.dynamic_params.sample_points as usize
                 || s.measurement.dynamic_time.unwrap().elapsed() > timeout
             {
                 // s.measurement.current_static_steps = None;
@@ -765,8 +783,8 @@ pub fn run_dynamic_experiment_loop(
                     Err(_) => continue,
                 };
             let prediction = prediction ^ (isama as usize);
-            if first==2{
-                first=prediction;
+            if first == 2 {
+                first = prediction;
             }
             predictions.pop_front();
             predictions.push_back(prediction);
@@ -777,14 +795,14 @@ pub fn run_dynamic_experiment_loop(
             // drop(s);
             // thread::sleep(Duration::from_millis(500));(- = 1 0)
             let mut triggered = false;
-            if predictions.iter().filter(|&x| *x == 1).count()>=3&&first==0 {
+            if predictions.iter().filter(|&x| *x == 1).count() >= 3 && first == 0 {
                 triggered = true;
-            } else if predictions.iter().filter(|&x| *x == 0).count()>=3&&first==1 {
+            } else if predictions.iter().filter(|&x| *x == 0).count() >= 3 && first == 1 {
                 triggered = true;
             }
             if triggered {
                 // let elapsed_time =
-                let params={
+                let params = {
                     let mut s = state.lock();
                     let result = crate::communication::DynamicResult {
                         index: s.measurement.dynamic_results.len() + 1,
@@ -797,13 +815,13 @@ pub fn run_dynamic_experiment_loop(
                         s.measurement.dynamic_results.clone(),
                     )))?;
                     info!("已测量第 {} 个点", s.measurement.dynamic_results.len());
-                    s.measurement.dynamic_params.clone()  
+                    s.measurement.dynamic_params.clone()
                 };
                 save_dynamic_results(state, tx, params.clone())?;
                 precision_rotate(state, tx, (params.step_angle * 746.0).round() as i32)?;
                 predictions = VecDeque::from(vec![2; 5]);
                 thread::sleep(Duration::from_millis(100));
-                first=2;
+                first = 2;
             }
 
             thread::sleep(Duration::from_millis(50));
@@ -821,11 +839,8 @@ pub fn run_dynamic_experiment_loop(
         false,
     )))?;
     if let Err(e) = &result {
-        tracing::warn!(
-            "终止原因：{}",
-            e
-        );
-    } 
+        tracing::warn!("终止原因：{}", e);
+    }
     {
         info!(
             "测量完成，共测量 {} 个点",

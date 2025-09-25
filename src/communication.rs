@@ -163,6 +163,7 @@ pub enum TrainingUpdate {
     PersistentDatasetStatus(String),
     MAMDatasetStatus(String),
     AMADatasetStatus(String),
+
 }
 
 #[derive(Clone, Debug)]
@@ -174,7 +175,8 @@ pub enum MeasurementUpdate {
     DynamicResults(Vec<DynamicResult>),
     DynamicRunning(bool),
     CurrentSteps(Option<i32>),
-    StartTime(Option<std::time::Instant>)
+    StartTime(Option<std::time::Instant>),
+    Rotation(bool),
 }
 
 #[derive(Clone, Debug)]

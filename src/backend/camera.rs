@@ -90,7 +90,7 @@ pub fn set_camera_exposure(
         // 使用 anyhow::bail! 来创建一个错误并返回
         anyhow::bail!("通过 OpenCV 设置曝光失败");
     }
-    tracing::info!("爆");
+    // tracing::info!("爆");
     Ok(())
 }
 
@@ -142,6 +142,7 @@ impl CameraManager {
                         return;
                     }
                 };
+                
                 let mut expo_old = f64::NAN;
                 // let mut consecutive_read_errors = 0;
                 while !thread_stop_signal.load(Ordering::Relaxed) {
@@ -169,6 +170,7 @@ impl CameraManager {
                         // if getframe {
                         if frame.empty() {
                             // info!("相机断开4");
+                            *thread_latest_frame.lock() = None;
                             continue;
                         }
                         let mut processed_frame = frame.clone();

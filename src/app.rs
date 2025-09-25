@@ -70,6 +70,7 @@ pub struct PolarimeterApp {
     exposure: f64,
     min_radius: u32,
     max_radius: u32,
+    rotation: bool,
     camera_lock_circle: bool,
     camera_view_rect: Option<Rect>, // 用 Rect 存储当前视图的范围 (uv-coordinates)
     is_dragging_camera_view: bool,  // 标记是否正在拖动视图
@@ -227,6 +228,7 @@ impl PolarimeterApp {
 
         Self {
             cmd_tx,
+            rotation:false,
             update_rx,
             file_dialog_tx,
             file_dialog_rx,
@@ -381,6 +383,9 @@ impl PolarimeterApp {
                     TrainingUpdate::AMADatasetStatus(msg) => self.ama_video_status = msg,
                 },
                 Update::Measurement(update) => match update {
+                    MeasurementUpdate::Rotation(rot)=>{
+                        self.rotation=rot;
+                    }
                     MeasurementUpdate::StaticStatus(msg) => {
                         self.static_measurement_status = msg.clone();
                         self.status_message = msg;
@@ -532,17 +537,17 @@ impl PolarimeterApp {
                 // --- 日志 (最底部) ---
 
                 // --- 圆圈设定 (在日志上面) ---
-                // ui.add_space(10.0);
-                // ui.label(RichText::new("曝光设定").strong());
-                // if ui.add(
-                //         // egui::Slider::new(&mut self.min_radius, 1..=self.max_radius)
-                //         //     .text("最小圆半径"),
-                //         egui::DragValue::new(&mut self.exposure).clamp_range(-10.0..=10.0).speed(0.5),
-                //     ).changed(){
-                //         self.cmd_tx
-                //         .send(Command::Camera(CameraCommand::Exposure(self.exposure)))
-                //         .unwrap();
-                //     }
+                ui.add_space(10.0);
+                ui.label(RichText::new("曝光设定").strong());
+                if ui.add(
+                        // egui::Slider::new(&mut self.min_radius, 1..=self.max_radius)
+                        //     .text("最小圆半径"),
+                        egui::DragValue::new(&mut self.exposure).clamp_range(-10.0..=10.0).speed(0.5),
+                    ).changed(){
+                        self.cmd_tx
+                        .send(Command::Camera(CameraCommand::Exposure(self.exposure)))
+                        .unwrap();
+                    }
                 ui.add_space(10.0);
                 ui.label(RichText::new("识别设定").strong()); // 占满宽度
                 if ui
@@ -882,7 +887,7 @@ impl PolarimeterApp {
         ui.heading("模型");
         ui.add_space(5.0);
         ui.label(RichText::new("手动控制").strong());
-        ui.add_enabled_ui(self.is_serial_connected, |ui| {
+        ui.add_enabled_ui(self.is_serial_connected&&self.rotation==false, |ui| {
             ui.horizontal(|ui| {
                 ui.label("手动旋转");
                 ui.add(
@@ -1163,7 +1168,7 @@ impl PolarimeterApp {
         ui.add_space(10.0);
         ui.label(RichText::new("手动控制").strong());
         ui.add_enabled_ui(self.is_serial_connected, |ui| {
-            ui.add_enabled_ui(self.current_angle.is_some(), |ui| {
+            ui.add_enabled_ui(self.current_angle.is_some()&&self.rotation==false, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("手动旋转至");
                     ui.add(
@@ -1330,7 +1335,7 @@ impl PolarimeterApp {
         ui.add_space(10.0);
         ui.label(RichText::new("手动控制").strong());
         ui.add_enabled_ui(self.is_serial_connected, |ui| {
-            ui.add_enabled_ui(self.current_angle.is_some(), |ui| {
+            ui.add_enabled_ui(self.current_angle.is_some()&&self.rotation==false, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("手动旋转至");
                     ui.add(
@@ -1361,32 +1366,13 @@ impl PolarimeterApp {
             .show(ui, |ui| {
                 // --- 第一行：3个参数 ---
                 ui.label("实验温度 (°C):");
-                if ui
-                    .add(egui::DragValue::new(&mut self.dynamic_params.temperature))
-                    .changed()
-                {
-                    self.cmd_tx
-                        .send(Command::DynamicMeasure(
-                            DynamicMeasureCommand::UpdateParams {
-                                params: self.dynamic_params.clone(),
-                            },
-                        ))
-                        .unwrap();
-                }
+                ui
+                    .add(egui::DragValue::new(&mut self.dynamic_params.temperature));
 
                 ui.label("蔗糖浓度 (g/mL):");
-                if ui
-                    .add(egui::DragValue::new(&mut self.dynamic_params.sucrose_conc))
-                    .changed()
-                {
-                    self.cmd_tx
-                        .send(Command::DynamicMeasure(
-                            DynamicMeasureCommand::UpdateParams {
-                                params: self.dynamic_params.clone(),
-                            },
-                        ))
-                        .unwrap();
-                }
+                ui
+                    .add(egui::DragValue::new(&mut self.dynamic_params.sucrose_conc));
+                    
 
                 ui.label("盐酸浓度 (mol/L):");
                 ui.add(egui::DragValue::new(&mut self.dynamic_params.hcl_conc));
@@ -1395,11 +1381,16 @@ impl PolarimeterApp {
 
                 // --- 第二行：2个参数 ---
                 ui.label("步进角度(°):");
-                if ui
-                    .add(egui::DragValue::new(&mut self.dynamic_params.step_angle))
-                    .changed()
-                {
-                    self.cmd_tx
+                ui
+                    .add(egui::DragValue::new(&mut self.dynamic_params.step_angle));
+                    
+
+                ui.label("采样点数目:");
+                ui
+                    .add(egui::DragValue::new(&mut self.dynamic_params.sample_points));
+
+                if ui.button("提交").clicked(){
+                     self.cmd_tx
                         .send(Command::DynamicMeasure(
                             DynamicMeasureCommand::UpdateParams {
                                 params: self.dynamic_params.clone(),
@@ -1407,21 +1398,6 @@ impl PolarimeterApp {
                         ))
                         .unwrap();
                 }
-
-                ui.label("采样点数目:");
-                if ui
-                    .add(egui::DragValue::new(&mut self.dynamic_params.sample_points))
-                    .changed()
-                {
-                    self.cmd_tx
-                        .send(Command::DynamicMeasure(
-                            DynamicMeasureCommand::UpdateParams {
-                                params: self.dynamic_params.clone(),
-                            },
-                        ))
-                        .unwrap();
-                };
-
                 // 第二行只填充了4列，剩下的2列会留空，自然形成了 "上三下二" 的效果
                 ui.end_row(); // 结束第二行
             });
