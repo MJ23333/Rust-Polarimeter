@@ -227,7 +227,10 @@ impl Drop for CameraManager {
         info!("正在关闭 CameraManager...");
         self.stop_signal.store(true, Ordering::Relaxed);
         if let Some(handle) = self.thread_handle.take() {
-            handle.join().expect("无法 join 相机线程");
+            if let Err(e) = handle.join() {
+                // 打印日志，而不是让主线程 panic
+                error!("相机捕获线程发生 panic，无法正常 join: {:?}", e);
+            }
         }
         info!("CameraManager 已成功关闭。");
     }
@@ -356,7 +359,14 @@ fn mat_to_color_image(mat: Mat) -> Option<egui::ColorImage> {
         return None;
     }
 
-    let size = rgba_mat.size().unwrap();
+    let size = match rgba_mat.size() {
+        Ok(s) => s,
+        Err(e) => {
+            // 记录错误会更有帮助
+            error!("获取 Mat.size() 失败: {}", e);
+            return None;
+        }
+    };
     let width = size.width as usize;
     let height = size.height as usize;
 
