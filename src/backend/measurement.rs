@@ -716,7 +716,7 @@ pub fn run_dynamic_experiment_loop(
             s.training.fitted_model.as_ref().unwrap().clone(),
         )
     };
-    let result = (|| -> Result<()> {
+    let result = (|| -> Result<()> {//
         info!("动态追踪：开始预旋转");
         pre_rotation(state, tx, token.clone())?;
 
