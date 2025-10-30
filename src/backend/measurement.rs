@@ -822,7 +822,6 @@ pub fn run_dynamic_experiment_loop(
                 precision_rotate(state, tx, (params.step_angle * anglesteps).round() as i32)?;
                 predictions = VecDeque::from(vec![2; 5]);
                 thread::sleep(Duration::from_millis(100));
-                // first = 2;
             }
 
             thread::sleep(Duration::from_millis(50));
