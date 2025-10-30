@@ -60,6 +60,7 @@ pub struct PolarimeterApp {
     manual_rotation_angle: f32,
     manual_rotation_to_angle: f32,
     current_angle: Option<f32>,
+    anglesteps: f32,
 
     // --- 相机 (状态和控制移至监视器) ---
     camera_list: Vec<String>,
@@ -233,6 +234,7 @@ impl PolarimeterApp {
             file_dialog_tx,
             file_dialog_rx,
             selected_record: None,
+            anglesteps:746.0,
             log_buffer: VecDeque::with_capacity(100),
             backend_handle,
             cache: CommonMarkCache::default(),
@@ -398,7 +400,7 @@ impl PolarimeterApp {
                     MeasurementUpdate::StaticRunning(running) => self.is_static_running = running,
                     MeasurementUpdate::CurrentSteps(steps) => {
                         if let Some(steps) = steps {
-                            self.current_angle = Some((steps as f32) / 746.0);
+                            self.current_angle = Some((steps as f32) / self.anglesteps);
                         } else {
                             self.current_angle = None;
                         }
@@ -864,6 +866,21 @@ impl PolarimeterApp {
                     .unwrap();
             }
         });
+        ui.horizontal(|ui|{
+            ui.label("1°=");
+            let anglesteps=ui.add(
+                egui::DragValue::new(&mut self.anglesteps)
+                    .speed(1)
+                    .suffix("步")
+                    .clamp_range(0.0..=2000.0),
+            );
+            if anglesteps.changed(){
+                self.cmd_tx
+                    .send(Command::Device(DeviceCommand::SetStep(self.anglesteps)))
+                    .unwrap();
+            }
+            
+        });
         // ui.horizontal(|ui| {
         //     ui.label("旋转方向:");
         //     if ui
@@ -899,7 +916,7 @@ impl PolarimeterApp {
                 if ui.button("旋转").clicked() {
                     self.cmd_tx
                         .send(Command::Device(DeviceCommand::RotateMotor {
-                            steps: (self.manual_rotation_angle * 746.0).round() as i32,
+                            steps: (self.manual_rotation_angle * self.anglesteps).round() as i32,
                         }))
                         .unwrap();
                     self.manual_rotation_angle = 0.0;
@@ -956,7 +973,7 @@ impl PolarimeterApp {
                             .send(Command::Device(DeviceCommand::StartRecording {
                                 mode: self.recording_mode.clone(),
                                 save_path: self.selected_record.as_mut().unwrap().clone(),
-                                num: (self.recording_angle * 746.0).round() as i32,
+                                num: (self.recording_angle * self.anglesteps).round() as i32,
                             }))
                             .unwrap();
                         self.selected_record = None;
@@ -1179,7 +1196,7 @@ impl PolarimeterApp {
                     if ui.button("旋转").clicked() {
                         self.cmd_tx
                             .send(Command::Device(DeviceCommand::RotateTo {
-                                steps: (self.manual_rotation_to_angle * 746.0).round() as i32,
+                                steps: (self.manual_rotation_to_angle * self.anglesteps).round() as i32,
                             }))
                             .unwrap();
                         // self.manual_rotation_to_angle = 0.0;
@@ -1346,7 +1363,7 @@ impl PolarimeterApp {
                     if ui.button("旋转").clicked() {
                         self.cmd_tx
                             .send(Command::Device(DeviceCommand::RotateTo {
-                                steps: (self.manual_rotation_to_angle * 746.0).round() as i32,
+                                steps: (self.manual_rotation_to_angle * self.anglesteps).round() as i32,
                             }))
                             .unwrap();
                         // self.manual_rotation_to_angle = 0.0;

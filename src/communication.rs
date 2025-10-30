@@ -35,6 +35,7 @@ pub enum DeviceCommand {
     DisconnectSerial,
     TestSerial,
     SetRotationDirection(bool), // true for AMA, false for MAM
+    SetStep(f32),
     SetRotationReverse(bool),
     RotateMotor { steps:i32 },
     RotateTo { steps:i32 },

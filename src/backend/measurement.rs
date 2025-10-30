@@ -371,6 +371,7 @@ pub fn static_measurement(
                         .lock()
                         .clone()
                 };
+                let anglesteps=s.devices.angle_steps;
                 let frame = match frame {
                     Some(f) => f,
                     None => {
@@ -412,9 +413,9 @@ pub fn static_measurement(
                 if first_first == 2 {
                     first_first = prediction;
                     if prediction == 0 {
-                        precision_rotate(state, tx, 746)?;
+                        precision_rotate(state, tx,anglesteps.round() as i32)?;
                     } else {
-                        precision_rotate(state, tx, -746)?;
+                        precision_rotate(state, tx, -anglesteps.round() as i32)?;
                     }
                 }
                 // thread::sleep(Duration::from_millis(500));(- = 1 0)
@@ -480,7 +481,7 @@ pub fn static_measurement(
                     let result = StaticResult {
                         index: s.measurement.static_results.len() + 1,
                         steps: s.measurement.current_steps.unwrap(),
-                        angle: s.measurement.current_steps.unwrap() as f32 / 746.0,
+                        angle: s.measurement.current_steps.unwrap() as f32 / s.devices.angle_steps,
                     };
                     s.measurement.static_results.push(result);
 
@@ -720,8 +721,8 @@ pub fn run_dynamic_experiment_loop(
         info!("动态追踪：开始预旋转");
         pre_rotation(state, tx, token.clone())?;
 
-        let params = { state.lock().measurement.dynamic_params.clone() };
-        precision_rotate(state, tx, (params.step_angle * 746.0).round() as i32)?;
+        let (params,anglesteps) = { let  s =state.lock();(s.measurement.dynamic_params.clone(),s.devices.angle_steps) };
+        precision_rotate(state, tx, (params.step_angle * anglesteps).round() as i32)?;
         info!("动态追踪：预旋转完成");
 
         let timeout = Duration::from_secs(5000);
@@ -808,7 +809,7 @@ pub fn run_dynamic_experiment_loop(
                         index: s.measurement.dynamic_results.len() + 1,
                         time: s.measurement.dynamic_time.unwrap().elapsed().as_secs_f64(),
                         steps: s.measurement.current_steps.unwrap(),
-                        angle: s.measurement.current_steps.unwrap() as f32 / 746.0,
+                        angle: s.measurement.current_steps.unwrap() as f32 / s.devices.angle_steps,
                     };
                     s.measurement.dynamic_results.push(result);
                     tx.send(Update::Measurement(MeasurementUpdate::DynamicResults(
@@ -818,7 +819,7 @@ pub fn run_dynamic_experiment_loop(
                     s.measurement.dynamic_params.clone()
                 };
                 save_dynamic_results(state, tx, params.clone())?;
-                precision_rotate(state, tx, (params.step_angle * 746.0).round() as i32)?;
+                precision_rotate(state, tx, (params.step_angle * anglesteps).round() as i32)?;
                 predictions = VecDeque::from(vec![2; 5]);
                 thread::sleep(Duration::from_millis(100));
                 // first = 2;

@@ -82,8 +82,10 @@ pub fn handle_device(
             // 2. 创建一个专门用于停止本次录制的取消令牌
 
             // 3. 将令牌存入共享状态，以便 StopRecording 命令可以找到它
-            state.lock().recording.cancellation_token = Some(token.clone());
-            state.lock().recording.steps_moved = 0;
+            {
+                state.lock().recording.cancellation_token = Some(token.clone());
+                state.lock().recording.steps_moved = 0;
+            }
 
             // 必须在调用阻塞函数前释放锁，否则 StopRecording 命令将永远无法获取锁
             // drop(state_guard);
@@ -128,6 +130,9 @@ pub fn handle_device(
             }
 
             // send_status(&tx, "已返回零点")?;
+        }
+        DeviceCommand::SetStep(anglestpes)=>{
+            state.lock().devices.angle_steps=anglestpes
         }
         _ => info!("收到未实现的 DeviceCommand"),
     }

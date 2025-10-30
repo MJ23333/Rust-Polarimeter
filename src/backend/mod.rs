@@ -43,6 +43,7 @@ pub struct DeviceState {
     camera_manager: Option<CameraManager>,
     serial_port: Option<Arc<Mutex<Box<dyn serialport::SerialPort>>>>,
     camera_settings: Arc<Mutex<CameraSettings>>,
+    angle_steps: f32,
 }
 // --- NEW: State for the recording task ---
 pub struct RecordingState {
@@ -144,6 +145,7 @@ impl BackendState {
                     min_radius: 30,
                     max_radius: 45,
                 })),
+                angle_steps: 746.0,
             },
             recording: RecordingState {
                 // --- NEW ---
